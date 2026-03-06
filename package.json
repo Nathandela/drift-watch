@@ -1,0 +1,22 @@
+{
+  "name": "drift-watch",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.28.2",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "node-llama-cpp"
+    ]
+  },
+  "devDependencies": {
+    "compound-agent": "^1.6.2"
+  }
+}

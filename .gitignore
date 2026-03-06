@@ -7,3 +7,7 @@ dist/
 # Dolt database files (added by bd init)
 .dolt/
 *.db
+
+# compound-agent
+.claude/.cache/
+.claude/.ca-*.json
