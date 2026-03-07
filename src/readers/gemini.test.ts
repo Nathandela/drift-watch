@@ -37,6 +37,7 @@ describe('readGeminiSession', () => {
     expect(conv.toolUses).toHaveLength(1);
     expect(conv.toolUses[0].name).toBe('read_file');
     expect(conv.toolUses[0].input).toEqual({ path: 'src/index.ts' });
+    expect(conv.toolUses[0].result).toBe('export const x = 1;');
   });
 
   it('handles malformed JSON gracefully', () => {

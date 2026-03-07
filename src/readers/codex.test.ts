@@ -36,6 +36,8 @@ describe('readCodexSession', () => {
 
     expect(conv.toolUses).toHaveLength(1);
     expect(conv.toolUses[0].name).toBe('shell');
+    expect(conv.toolUses[0].input).toEqual({ command: 'cat auth.ts' });
+    expect(conv.toolUses[0].result).toBe('export function validate() { return true; }');
   });
 
   it('handles empty content', () => {
