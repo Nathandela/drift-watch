@@ -29,6 +29,17 @@ export function parseCronArgs(args: string[]): { subcommand?: string; interval?:
   return { subcommand, interval };
 }
 
+const CRON_FIELD = /^[\d*,/-]+$/;
+
+function validateCronInterval(interval: string): void {
+  const fields = interval.split(/\s+/);
+  if (fields.length !== 5 || !fields.every((f) => CRON_FIELD.test(f))) {
+    throw new Error(
+      `Invalid cron expression: "${interval}". Expected 5 fields (e.g., "0 3 * * 0").`,
+    );
+  }
+}
+
 function getCurrentCrontab(): string {
   try {
     const buf = execFileSync('crontab', ['-l']);
@@ -43,7 +54,7 @@ function writeCrontab(content: string): void {
 }
 
 function filterDriftWatchLines(crontab: string): string[] {
-  return crontab.split('\n').filter((line) => line && !line.includes('drift-watch'));
+  return crontab.split('\n').filter((line) => line && !/drift-watch\s+scan\b/.test(line));
 }
 
 export async function cronInstall(options?: {
@@ -51,6 +62,7 @@ export async function cronInstall(options?: {
   dataDir?: string;
 }): Promise<CronResult> {
   const interval = options?.interval ?? '0 3 * * 0';
+  validateCronInterval(interval);
   const dataDir = options?.dataDir ?? DEFAULT_DATA_DIR;
   const logsDir = path.join(dataDir, 'logs');
 

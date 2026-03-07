@@ -5,7 +5,7 @@ import { status, printStatus } from './commands/status.js';
 import { scan } from './commands/scan.js';
 import { report, printReport, parseReportArgs } from './commands/report.js';
 import { suggest, printSuggestions, parseSuggestArgs } from './commands/suggest.js';
-import { readConfig, printConfig, setConfigValue } from './config/index.js';
+import { readConfig, printConfig, setConfigValue, DEFAULT_CONFIG } from './config/index.js';
 import {
   parseCronArgs,
   cronInstall,
@@ -57,8 +57,14 @@ async function main(): Promise<void> {
       } else if (sub === 'set') {
         const key = process.argv[4];
         const value = process.argv[5];
+        const validKeys = Object.keys(DEFAULT_CONFIG);
         if (!key || !value) {
           console.log('Usage: drift-watch config set <key> <value>');
+          console.log(`Valid keys: ${validKeys.join(', ')}`);
+          process.exit(1);
+        }
+        if (!validKeys.includes(key)) {
+          console.error(`Unknown config key: "${key}". Valid keys: ${validKeys.join(', ')}`);
           process.exit(1);
         }
         setConfigValue(key, value);

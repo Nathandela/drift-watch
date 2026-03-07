@@ -101,6 +101,22 @@ describe('cronInstall', () => {
     expect(writeCall).toBeDefined();
   });
 
+  it('rejects invalid cron expression', async () => {
+    execFileSync.mockImplementation(() => Buffer.from(''));
+
+    await expect(
+      cronInstall({ interval: 'not a cron expr', dataDir: '/tmp/test-dw' }),
+    ).rejects.toThrow('Invalid cron expression');
+  });
+
+  it('rejects cron expression with injection attempt', async () => {
+    execFileSync.mockImplementation(() => Buffer.from(''));
+
+    await expect(
+      cronInstall({ interval: '0 3 * * 0\n* * * * * malicious', dataDir: '/tmp/test-dw' }),
+    ).rejects.toThrow('Invalid cron expression');
+  });
+
   it('creates logs directory', async () => {
     execFileSync.mockImplementation(() => Buffer.from(''));
 
