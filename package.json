@@ -17,6 +17,6 @@
     ]
   },
   "devDependencies": {
-    "compound-agent": "^1.6.2"
+    "compound-agent": "^1.6.4"
   }
 }

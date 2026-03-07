@@ -20,17 +20,25 @@ Before starting EACH phase, you MUST use the Read tool to open its skill file:
 Do NOT proceed from memory. Read the skill, then follow it exactly.
 
 ## Session Start
-When a cooking session begins, IMMEDIATELY print the chef banner below (copy it verbatim):
+When a cooking session begins, IMMEDIATELY print the brain banner below (copy it verbatim):
 
-```
-
-┌───────┐
- │▒▒▒▒▒│
- ▐▛███▜▌ o
-▝▜█████▛▘|
-  ▘▘ ▝▝
-Claude the Cooker
-```
+        ___    ___
+    .."`)  "`.."  "(``.
+  .'; _..=. [96m::[0m `-'._ ;`.
+ : ) ;"`':._. [96m::[0m_.      ( :.
+.:-"   _.  `"[36m##[0m"` "._ `-:\
+/."   -"`  ._.[96m::[0m._.  .'"  ".:
+: :    ( -: `" [96m::[0m "` :- )    : )
+( .":==._ ' `'=._[36m##[0m_.=' ' _.==: .'
+(:  `, `"`    `"[36m##[0m"`    `"` .'`".)
+ \`'  `"--.  "- )( -" ..--"` `-/
+ (" (_."`  ="""-..."`...-""= "._) ")
+  "..__..-"  )[32m%[0m`..'`[32m%[0m(  "-..__.."
+       (#"...'\\[32m%%%%[0m/`..."#)
+        `[35m######[0m`--'[35m######[0m"
+          "[35m###[0m")[33m@@[0m(`[35m###[0m"
+               \[33m@@[0m/
+             Claw'd
 
 Then proceed with the protocol below.
 
