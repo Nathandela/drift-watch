@@ -63,7 +63,12 @@ ALTER TABLE patterns ADD COLUMN occurrence_count INT NOT NULL DEFAULT 1;
 ALTER TABLE patterns ADD COLUMN last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
 `;
 
-const CURRENT_VERSION = 2;
+export const SCHEMA_V3_SQL = `
+ALTER TABLE findings ADD COLUMN model VARCHAR(100);
+ALTER TABLE findings ADD COLUMN project VARCHAR(255);
+`;
+
+const CURRENT_VERSION = 3;
 
 export function parseMigrations(sql: string): string[] {
   return sql
@@ -102,6 +107,19 @@ export async function applyMigrations(conn: Connection): Promise<void> {
       }
     }
     await conn.execute('REPLACE INTO schema_version (version) VALUES (?)', [2]);
+  }
+
+  if (currentVersion < 3) {
+    const v3Stmts = parseMigrations(SCHEMA_V3_SQL);
+    for (const stmt of v3Stmts) {
+      try {
+        await conn.execute(stmt);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '';
+        if (!msg.includes('already exists')) throw err;
+      }
+    }
+    await conn.execute('REPLACE INTO schema_version (version) VALUES (?)', [3]);
   }
 }
 

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import mysql from 'mysql2/promise';
-import { parseMigrations, SCHEMA_SQL, SCHEMA_V2_SQL } from './migrations.js';
+import { parseMigrations, SCHEMA_SQL, SCHEMA_V2_SQL, SCHEMA_V3_SQL } from './migrations.js';
 import { Repository } from './repository.js';
 import { derivePort } from './dolt.js';
 
@@ -54,6 +54,10 @@ beforeAll(async () => {
   }
   const v2Statements = parseMigrations(SCHEMA_V2_SQL);
   for (const stmt of v2Statements) {
+    await conn.execute(stmt);
+  }
+  const v3Statements = parseMigrations(SCHEMA_V3_SQL);
+  for (const stmt of v3Statements) {
     await conn.execute(stmt);
   }
 
@@ -142,6 +146,8 @@ describe('Repository CRUD', () => {
         title: 'Loop detected',
         description: 'Agent looped 5 times on same error',
         severity: 'high',
+        model: 'claude-sonnet-4-20250514',
+        project: '/my-project',
       });
       expect(findingId).toBeTruthy();
 

@@ -19,6 +19,8 @@ export interface Finding {
   title: string;
   description: string | null;
   severity: string;
+  model: string | null;
+  project: string | null;
   created_at: Date;
 }
 
@@ -113,8 +115,18 @@ export class Repository {
   async insertFinding(data: Omit<Finding, 'id' | 'created_at'>): Promise<string> {
     const id = ulid();
     await this.conn.execute(
-      'INSERT INTO findings (id, scan_id, session_id, source, title, description, severity) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, data.scan_id, data.session_id, data.source, data.title, data.description, data.severity],
+      'INSERT INTO findings (id, scan_id, session_id, source, title, description, severity, model, project) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        id,
+        data.scan_id,
+        data.session_id,
+        data.source,
+        data.title,
+        data.description,
+        data.severity,
+        data.model ?? null,
+        data.project ?? null,
+      ],
     );
     return id;
   }

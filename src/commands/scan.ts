@@ -70,6 +70,8 @@ export async function scan(dataDir = DEFAULT_DATA_DIR): Promise<ScanResult> {
             title: finding.title,
             description: finding.description,
             severity: String(finding.severity),
+            model: finding.model ?? null,
+            project: finding.project ?? null,
           });
 
           await matchOrCreatePattern(repo, finding, findingId);
