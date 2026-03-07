@@ -51,19 +51,19 @@ export function writeConfig(config: Partial<DriftWatchConfig>, dataDir?: string)
 }
 
 export function getConfigValue(
-  key: keyof DriftWatchConfig,
+  key: string,
   dataDir?: string,
 ): DriftWatchConfig[keyof DriftWatchConfig] {
   const config = readConfig(dataDir);
-  return config[key];
+  return config[key as keyof DriftWatchConfig];
 }
 
-export function setConfigValue(key: keyof DriftWatchConfig, value: string, dataDir?: string): void {
+export function setConfigValue(key: string, value: string, dataDir?: string): void {
   let parsed: string | number | null | string[];
 
   if (value === 'null') {
     parsed = null;
-  } else if (ARRAY_FIELDS.includes(key)) {
+  } else if (ARRAY_FIELDS.includes(key as keyof DriftWatchConfig)) {
     parsed = value.split(',').map((s) => s.trim());
   } else if (!isNaN(Number(value)) && value.trim() !== '') {
     parsed = Number(value);
