@@ -1,9 +1,6 @@
-import path from 'node:path';
-import os from 'node:os';
 import { DoltServer } from '../storage/dolt.js';
 import { Repository } from '../storage/repository.js';
-
-const DEFAULT_DATA_DIR = path.join(os.homedir(), '.drift-watch');
+import { DEFAULT_DATA_DIR } from './config.js';
 
 export interface StatusResult {
   serverRunning: boolean;

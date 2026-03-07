@@ -72,6 +72,13 @@ export class Repository {
     return (rows[0] as Scan) ?? null;
   }
 
+  private static readonly SCAN_UPDATE_FIELDS = new Set([
+    'finished_at',
+    'status',
+    'sessions_scanned',
+    'findings_count',
+  ]);
+
   async updateScan(
     id: string,
     data: Partial<Pick<Scan, 'finished_at' | 'status' | 'sessions_scanned' | 'findings_count'>>,
@@ -79,6 +86,7 @@ export class Repository {
     const fields: string[] = [];
     const values: unknown[] = [];
     for (const [key, val] of Object.entries(data)) {
+      if (!Repository.SCAN_UPDATE_FIELDS.has(key)) continue;
       fields.push(`${key} = ?`);
       values.push(val);
     }

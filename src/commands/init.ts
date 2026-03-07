@@ -1,15 +1,13 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { DoltServer } from '../storage/dolt.js';
 import { applyMigrations } from '../storage/migrations.js';
-
-const DEFAULT_DATA_DIR = path.join(os.homedir(), '.drift-watch');
+import { DEFAULT_DATA_DIR } from './config.js';
 
 function checkCli(command: string, versionArg: string): string {
   try {
-    return execSync(`${command} ${versionArg}`, { encoding: 'utf-8' }).trim();
+    return execFileSync(command, [versionArg], { encoding: 'utf-8' }).trim();
   } catch {
     throw new Error(`Required CLI not found: ${command}. Please install it first.`);
   }
@@ -32,8 +30,12 @@ export async function init(dataDir = DEFAULT_DATA_DIR): Promise<void> {
 
   // Initialize Dolt repo if needed
   if (!fs.existsSync(path.join(doltDir, '.dolt'))) {
-    execSync('dolt init --name drift-watch --email drift-watch@local', { cwd: doltDir });
-    execSync('dolt sql -q "CREATE DATABASE IF NOT EXISTS drift_watch"', { cwd: doltDir });
+    execFileSync('dolt', ['init', '--name', 'drift-watch', '--email', 'drift-watch@local'], {
+      cwd: doltDir,
+    });
+    execFileSync('dolt', ['sql', '-q', 'CREATE DATABASE IF NOT EXISTS drift_watch'], {
+      cwd: doltDir,
+    });
     console.log('Initialized Dolt repository');
   }
 
