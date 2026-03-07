@@ -94,7 +94,12 @@ export async function applyMigrations(conn: Connection): Promise<void> {
   if (currentVersion < 2) {
     const v2Stmts = parseMigrations(SCHEMA_V2_SQL);
     for (const stmt of v2Stmts) {
-      await conn.execute(stmt);
+      try {
+        await conn.execute(stmt);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '';
+        if (!msg.includes('already exists')) throw err;
+      }
     }
     await conn.execute('REPLACE INTO schema_version (version) VALUES (?)', [2]);
   }

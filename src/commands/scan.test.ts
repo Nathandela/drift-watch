@@ -41,7 +41,6 @@ describe('scan', () => {
   let analyze: ReturnType<typeof vi.fn>;
   let matchOrCreatePattern: ReturnType<typeof vi.fn>;
 
-  // Mock connection and repo
   const mockConn = {
     execute: vi.fn().mockResolvedValue([[], []]),
     end: vi.fn().mockResolvedValue(undefined),
@@ -109,7 +108,6 @@ describe('scan', () => {
 
     await scan('/fake-dir');
 
-    // Should be called twice - once per project group
     expect(analyze).toHaveBeenCalledTimes(2);
   });
 
@@ -125,8 +123,51 @@ describe('scan', () => {
     expect(matchOrCreatePattern).toHaveBeenCalledTimes(2);
   });
 
-  it('closes connection after scan', async () => {
+  it('calls doltCommit after successful scan', async () => {
+    const conv = makeConversation();
+    discoverConversations.mockResolvedValue([conv]);
+    analyze.mockResolvedValue([makeFinding()]);
+
     await scan('/fake-dir');
+
+    // DOLT_ADD + DOLT_COMMIT should be called
+    const executeCalls = mockConn.execute.mock.calls.map((c: unknown[]) => c[0]);
+    expect(executeCalls).toContain("CALL DOLT_ADD('-A')");
+    expect(executeCalls.some((sql: unknown) => sql === 'CALL DOLT_COMMIT(?, ?)')).toBe(true);
+  });
+
+  it('calls doltCommit even with zero findings', async () => {
+    const conv = makeConversation();
+    discoverConversations.mockResolvedValue([conv]);
+    analyze.mockResolvedValue([]);
+
+    await scan('/fake-dir');
+
+    const executeCalls = mockConn.execute.mock.calls.map((c: unknown[]) => c[0]);
+    expect(executeCalls).toContain("CALL DOLT_ADD('-A')");
+  });
+
+  it('sets scan status to failed on analysis error', async () => {
+    const conv = makeConversation();
+    discoverConversations.mockResolvedValue([conv]);
+    analyze.mockRejectedValue(new Error('LLM timeout'));
+
+    await expect(scan('/fake-dir')).rejects.toThrow('LLM timeout');
+
+    // Should have UPDATE with 'failed' status
+    const executeCalls = mockConn.execute.mock.calls;
+    const updateCall = executeCalls.find(
+      (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('UPDATE scans SET'),
+    );
+    expect(updateCall).toBeDefined();
+  });
+
+  it('closes connection after error', async () => {
+    const conv = makeConversation();
+    discoverConversations.mockResolvedValue([conv]);
+    analyze.mockRejectedValue(new Error('fail'));
+
+    await expect(scan('/fake-dir')).rejects.toThrow('fail');
     expect(mockConn.end).toHaveBeenCalled();
   });
 });

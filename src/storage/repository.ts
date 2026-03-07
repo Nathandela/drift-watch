@@ -226,7 +226,11 @@ export class Repository {
     );
     const row = rows[0] as { cursor_json: string } | undefined;
     if (!row) return null;
-    return JSON.parse(row.cursor_json) as Record<string, string>;
+    try {
+      return JSON.parse(row.cursor_json) as Record<string, string>;
+    } catch {
+      return null;
+    }
   }
 
   async findPatternByCategory(category: string, name: string): Promise<Pattern | null> {

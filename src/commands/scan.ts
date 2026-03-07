@@ -44,8 +44,9 @@ export async function scan(dataDir = DEFAULT_DATA_DIR): Promise<ScanResult> {
     }
 
     // Create scan record
+    const startedAt = new Date();
     const scanId = await repo.insertScan({
-      started_at: new Date(),
+      started_at: startedAt,
       finished_at: null,
       status: 'running',
       sessions_scanned: 0,
@@ -57,27 +58,38 @@ export async function scan(dataDir = DEFAULT_DATA_DIR): Promise<ScanResult> {
     const groups = groupByProject(conversations);
     let totalFindings = 0;
 
-    for (const [, batch] of groups) {
-      const findings = await analyze(batch);
+    try {
+      for (const [, batch] of groups) {
+        const findings = await analyze(batch);
 
-      for (const finding of findings) {
-        const findingId = await repo.insertFinding({
-          scan_id: scanId,
-          session_id: finding.session_id,
-          source: finding.source,
-          title: finding.title,
-          description: finding.description,
-          severity: String(finding.severity),
-        });
+        for (const finding of findings) {
+          const findingId = await repo.insertFinding({
+            scan_id: scanId,
+            session_id: finding.session_id,
+            source: finding.source,
+            title: finding.title,
+            description: finding.description,
+            severity: String(finding.severity),
+          });
 
-        await matchOrCreatePattern(repo, finding, findingId);
+          await matchOrCreatePattern(repo, finding, findingId);
+        }
+
+        totalFindings += findings.length;
       }
-
-      totalFindings += findings.length;
+    } catch (err) {
+      await repo.updateScan(scanId, {
+        finished_at: new Date(),
+        status: 'failed',
+        sessions_scanned: conversations.length,
+        findings_count: totalFindings,
+      });
+      await repo.doltCommit(`scan: failed after ${totalFindings} finding(s)`);
+      throw err;
     }
 
-    // Update scan record
-    const newCursors = { lastScanTime: new Date().toISOString() };
+    // Update scan record with cursor based on scan start time
+    const newCursors = { lastScanTime: startedAt.toISOString() };
     await repo.updateScan(scanId, {
       finished_at: new Date(),
       status: 'completed',
@@ -86,12 +98,10 @@ export async function scan(dataDir = DEFAULT_DATA_DIR): Promise<ScanResult> {
       cursor_json: JSON.stringify(newCursors),
     });
 
-    // Create Dolt commit
-    if (totalFindings > 0) {
-      await repo.doltCommit(
-        `scan: ${totalFindings} finding(s) from ${conversations.length} session(s)`,
-      );
-    }
+    // Always commit to persist scan record and cursor
+    await repo.doltCommit(
+      `scan: ${totalFindings} finding(s) from ${conversations.length} session(s)`,
+    );
 
     return {
       sessionsScanned: conversations.length,
