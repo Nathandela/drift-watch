@@ -1,0 +1,58 @@
+{
+  "sessionId": "gemini-session-001",
+  "projectHash": "9d2fc9bafa894fe2539639e057b6b558183f64ac",
+  "startTime": "2026-03-01T10:00:00.000Z",
+  "lastUpdated": "2026-03-01T10:05:00.000Z",
+  "messages": [
+    {
+      "id": "msg-001",
+      "timestamp": "2026-03-01T10:00:00.000Z",
+      "type": "user",
+      "content": "Explain this codebase"
+    },
+    {
+      "id": "msg-002",
+      "timestamp": "2026-03-01T10:00:05.000Z",
+      "type": "gemini",
+      "model": "gemini-2.5-pro",
+      "content": "This is a TypeScript project with the following structure...",
+      "toolCalls": [
+        {
+          "id": "read_file-001",
+          "name": "read_file",
+          "displayName": "ReadFile",
+          "status": "success",
+          "timestamp": "2026-03-01T10:00:03.000Z",
+          "args": { "path": "src/index.ts" },
+          "result": [
+            {
+              "functionResponse": {
+                "id": "read_file-001",
+                "name": "read_file",
+                "response": "export const x = 1;"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "msg-003",
+      "timestamp": "2026-03-01T10:00:10.000Z",
+      "type": "error",
+      "content": "Connection timeout"
+    },
+    {
+      "id": "msg-004",
+      "timestamp": "2026-03-01T10:00:15.000Z",
+      "type": "user",
+      "content": [{ "text": "Continue" }]
+    },
+    {
+      "id": "msg-005",
+      "timestamp": "2026-03-01T10:00:20.000Z",
+      "type": "gemini",
+      "content": "Sure, continuing the analysis."
+    }
+  ]
+}

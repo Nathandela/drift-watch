@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user","content":"valid line"},"uuid":"v1","timestamp":"2026-03-01T10:00:00.000Z","sessionId":"s1","cwd":"/test"}
+this is not valid json at all
+{"broken json
+{"type":"assistant","message":{"model":"claude-sonnet-4-20250514","role":"assistant","content":[{"type":"text","text":"response"}]},"uuid":"v2","timestamp":"2026-03-01T10:00:05.000Z","sessionId":"s1","cwd":"/test"}

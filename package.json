@@ -32,6 +32,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
+    "@types/node": "^25.3.5",
     "compound-agent": "^1.6.4",
     "eslint": "^9.0.0",
     "husky": "^9.0.0",
