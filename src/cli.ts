@@ -2,6 +2,7 @@
 
 import { init } from './commands/init.js';
 import { status, printStatus } from './commands/status.js';
+import { scan } from './commands/scan.js';
 
 const command = process.argv[2];
 
@@ -15,8 +16,19 @@ async function main(): Promise<void> {
       printStatus(result);
       break;
     }
+    case 'scan': {
+      const result = await scan();
+      if (result.findingsCount === 0 && result.sessionsScanned === 0) {
+        console.log('No new conversations to scan.');
+      } else {
+        console.log(
+          `Scanned ${result.sessionsScanned} session(s), found ${result.findingsCount} finding(s).`,
+        );
+      }
+      break;
+    }
     default:
-      console.log('Usage: drift-watch <init|status>');
+      console.log('Usage: drift-watch <init|status|scan>');
       process.exit(command ? 1 : 0);
   }
 }

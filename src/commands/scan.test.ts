@@ -1,0 +1,132 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { Finding } from '../analysis/schema.js';
+import type { NormalizedConversation } from '../readers/types.js';
+
+vi.mock('../readers/index.js');
+vi.mock('../analysis/index.js');
+vi.mock('../storage/dolt.js');
+vi.mock('../storage/migrations.js');
+vi.mock('../storage/patterns.js');
+
+function makeFinding(overrides: Partial<Finding> = {}): Finding {
+  return {
+    source: 'claude',
+    session_id: 'sess-1',
+    session_date: '2026-03-01',
+    category: 'repeated_mistake',
+    severity: 2,
+    title: 'Test finding',
+    description: 'desc',
+    evidence: 'evidence',
+    ...overrides,
+  };
+}
+
+function makeConversation(overrides: Partial<NormalizedConversation> = {}): NormalizedConversation {
+  return {
+    source: 'claude',
+    model: 'claude-sonnet-4-20250514',
+    project: '/project-a',
+    sessionId: 'sess-1',
+    sessionDate: '2026-03-01',
+    messages: [{ role: 'user', content: 'Hello' }],
+    toolUses: [],
+    ...overrides,
+  };
+}
+
+describe('scan', () => {
+  let scan: typeof import('./scan.js').scan;
+  let discoverConversations: ReturnType<typeof vi.fn>;
+  let analyze: ReturnType<typeof vi.fn>;
+  let matchOrCreatePattern: ReturnType<typeof vi.fn>;
+
+  // Mock connection and repo
+  const mockConn = {
+    execute: vi.fn().mockResolvedValue([[], []]),
+    end: vi.fn().mockResolvedValue(undefined),
+  };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+
+    const readersModule = await import('../readers/index.js');
+    discoverConversations = vi.mocked(readersModule.discoverConversations).mockResolvedValue([]);
+
+    const analysisModule = await import('../analysis/index.js');
+    analyze = vi.mocked(analysisModule.analyze).mockResolvedValue([]);
+
+    const patternsModule = await import('../storage/patterns.js');
+    matchOrCreatePattern = vi
+      .mocked(patternsModule.matchOrCreatePattern)
+      .mockResolvedValue('pat-1');
+
+    const doltModule = await import('../storage/dolt.js');
+    vi.mocked(doltModule.DoltServer).mockImplementation(
+      () =>
+        ({
+          connect: vi.fn().mockResolvedValue(mockConn),
+        }) as unknown as InstanceType<typeof doltModule.DoltServer>,
+    );
+
+    const migrationsModule = await import('../storage/migrations.js');
+    vi.mocked(migrationsModule.applyMigrations).mockResolvedValue(undefined);
+
+    const scanModule = await import('./scan.js');
+    scan = scanModule.scan;
+  });
+
+  it('returns early with no findings when no conversations found', async () => {
+    const result = await scan('/fake-dir');
+
+    expect(result.sessionsScanned).toBe(0);
+    expect(result.findingsCount).toBe(0);
+    expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it('discovers conversations and analyzes them', async () => {
+    const conv = makeConversation();
+    discoverConversations.mockResolvedValue([conv]);
+
+    const findings = [makeFinding()];
+    analyze.mockResolvedValue(findings);
+
+    const result = await scan('/fake-dir');
+
+    expect(discoverConversations).toHaveBeenCalled();
+    expect(analyze).toHaveBeenCalledWith([conv]);
+    expect(result.sessionsScanned).toBe(1);
+    expect(result.findingsCount).toBe(1);
+  });
+
+  it('groups conversations by project for batched analysis', async () => {
+    const conv1 = makeConversation({ project: '/project-a', sessionId: 'sess-1' });
+    const conv2 = makeConversation({ project: '/project-b', sessionId: 'sess-2' });
+    const conv3 = makeConversation({ project: '/project-a', sessionId: 'sess-3' });
+    discoverConversations.mockResolvedValue([conv1, conv2, conv3]);
+
+    analyze.mockResolvedValue([]);
+
+    await scan('/fake-dir');
+
+    // Should be called twice - once per project group
+    expect(analyze).toHaveBeenCalledTimes(2);
+  });
+
+  it('matches findings to patterns', async () => {
+    const conv = makeConversation();
+    discoverConversations.mockResolvedValue([conv]);
+
+    const findings = [makeFinding(), makeFinding({ title: 'Second' })];
+    analyze.mockResolvedValue(findings);
+
+    await scan('/fake-dir');
+
+    expect(matchOrCreatePattern).toHaveBeenCalledTimes(2);
+  });
+
+  it('closes connection after scan', async () => {
+    await scan('/fake-dir');
+    expect(mockConn.end).toHaveBeenCalled();
+  });
+});

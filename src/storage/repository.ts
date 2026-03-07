@@ -8,6 +8,7 @@ export interface Scan {
   status: string;
   sessions_scanned: number;
   findings_count: number;
+  cursor_json: string | null;
 }
 
 export interface Finding {
@@ -27,6 +28,8 @@ export interface Pattern {
   description: string | null;
   severity: string;
   category: string | null;
+  occurrence_count: number;
+  last_seen: Date | null;
   created_at: Date;
 }
 
@@ -52,7 +55,7 @@ export class Repository {
   async insertScan(data: Omit<Scan, 'id'>): Promise<string> {
     const id = ulid();
     await this.conn.execute(
-      'INSERT INTO scans (id, started_at, finished_at, status, sessions_scanned, findings_count) VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT INTO scans (id, started_at, finished_at, status, sessions_scanned, findings_count, cursor_json) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [
         id,
         data.started_at,
@@ -60,6 +63,7 @@ export class Repository {
         data.status,
         data.sessions_scanned,
         data.findings_count,
+        data.cursor_json ?? null,
       ],
     );
     return id;
@@ -77,18 +81,21 @@ export class Repository {
     'status',
     'sessions_scanned',
     'findings_count',
+    'cursor_json',
   ]);
 
   async updateScan(
     id: string,
-    data: Partial<Pick<Scan, 'finished_at' | 'status' | 'sessions_scanned' | 'findings_count'>>,
+    data: Partial<
+      Pick<Scan, 'finished_at' | 'status' | 'sessions_scanned' | 'findings_count' | 'cursor_json'>
+    >,
   ): Promise<void> {
     const fields: string[] = [];
-    const values: unknown[] = [];
+    const values: (string | number | Date | null)[] = [];
     for (const [key, val] of Object.entries(data)) {
       if (!Repository.SCAN_UPDATE_FIELDS.has(key)) continue;
       fields.push(`${key} = ?`);
-      values.push(val);
+      values.push(val as string | number | Date | null);
     }
     if (fields.length === 0) return;
     values.push(id);
@@ -128,7 +135,9 @@ export class Repository {
   }
 
   // Patterns
-  async insertPattern(data: Omit<Pattern, 'id' | 'created_at'>): Promise<string> {
+  async insertPattern(
+    data: Omit<Pattern, 'id' | 'created_at' | 'occurrence_count' | 'last_seen'>,
+  ): Promise<string> {
     const id = ulid();
     await this.conn.execute(
       'INSERT INTO patterns (id, name, description, severity, category) VALUES (?, ?, ?, ?, ?)',
@@ -209,5 +218,34 @@ export class Repository {
       'SELECT * FROM scans ORDER BY started_at DESC LIMIT 1',
     );
     return (rows[0] as Scan) ?? null;
+  }
+
+  async getLatestCursors(): Promise<Record<string, string> | null> {
+    const [rows] = await this.conn.execute<RowDataPacket[]>(
+      "SELECT cursor_json FROM scans WHERE status = 'completed' AND cursor_json IS NOT NULL ORDER BY started_at DESC LIMIT 1",
+    );
+    const row = rows[0] as { cursor_json: string } | undefined;
+    if (!row) return null;
+    return JSON.parse(row.cursor_json) as Record<string, string>;
+  }
+
+  async findPatternByCategory(category: string, name: string): Promise<Pattern | null> {
+    const [rows] = await this.conn.execute<RowDataPacket[]>(
+      'SELECT * FROM patterns WHERE category = ? AND name = ?',
+      [category, name],
+    );
+    return (rows[0] as Pattern) ?? null;
+  }
+
+  async updatePatternOccurrence(id: string): Promise<void> {
+    await this.conn.execute(
+      'UPDATE patterns SET occurrence_count = occurrence_count + 1, last_seen = NOW() WHERE id = ?',
+      [id],
+    );
+  }
+
+  async doltCommit(message: string): Promise<void> {
+    await this.conn.execute("CALL DOLT_ADD('-A')");
+    await this.conn.execute('CALL DOLT_COMMIT(?, ?)', ['-m', message]);
   }
 }

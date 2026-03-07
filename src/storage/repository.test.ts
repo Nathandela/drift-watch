@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import mysql from 'mysql2/promise';
-import { parseMigrations, SCHEMA_SQL } from './migrations.js';
+import { parseMigrations, SCHEMA_SQL, SCHEMA_V2_SQL } from './migrations.js';
 import { Repository } from './repository.js';
 import { derivePort } from './dolt.js';
 
@@ -47,9 +47,13 @@ beforeAll(async () => {
     }
   }
 
-  // Apply schema
+  // Apply schema v1 + v2
   const statements = parseMigrations(SCHEMA_SQL);
   for (const stmt of statements) {
+    await conn.execute(stmt);
+  }
+  const v2Statements = parseMigrations(SCHEMA_V2_SQL);
+  for (const stmt of v2Statements) {
     await conn.execute(stmt);
   }
 
@@ -82,6 +86,7 @@ describe('Repository CRUD', () => {
         status: 'running',
         sessions_scanned: 0,
         findings_count: 0,
+        cursor_json: null,
       });
       expect(scanId).toBeTruthy();
 

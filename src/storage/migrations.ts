@@ -56,7 +56,14 @@ CREATE TABLE IF NOT EXISTS suggestions (
 );
 `;
 
-const CURRENT_VERSION = 1;
+export const SCHEMA_V2_SQL = `
+ALTER TABLE scans ADD COLUMN cursor_json TEXT;
+
+ALTER TABLE patterns ADD COLUMN occurrence_count INT NOT NULL DEFAULT 1;
+ALTER TABLE patterns ADD COLUMN last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+`;
+
+const CURRENT_VERSION = 2;
 
 export function parseMigrations(sql: string): string[] {
   return sql
@@ -77,11 +84,20 @@ export async function applyMigrations(conn: Connection): Promise<void> {
   const currentVersion = await getSchemaVersion(conn);
   if (currentVersion >= CURRENT_VERSION) return;
 
-  for (const stmt of statements) {
-    await conn.execute(stmt);
+  if (currentVersion < 1) {
+    for (const stmt of statements) {
+      await conn.execute(stmt);
+    }
+    await conn.execute('REPLACE INTO schema_version (version) VALUES (?)', [1]);
   }
 
-  await conn.execute('REPLACE INTO schema_version (version) VALUES (?)', [CURRENT_VERSION]);
+  if (currentVersion < 2) {
+    const v2Stmts = parseMigrations(SCHEMA_V2_SQL);
+    for (const stmt of v2Stmts) {
+      await conn.execute(stmt);
+    }
+    await conn.execute('REPLACE INTO schema_version (version) VALUES (?)', [2]);
+  }
 }
 
 async function getSchemaVersion(conn: Connection): Promise<number> {
