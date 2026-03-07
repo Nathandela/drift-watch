@@ -5,6 +5,9 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "drift-watch": "dist/cli.js"
+  },
   "scripts": {
     "build": "tsup",
     "test": "vitest run",
@@ -53,6 +56,8 @@
     ]
   },
   "dependencies": {
+    "mysql2": "^3.19.0",
+    "ulid": "^3.0.2",
     "zod": "^4.3.6"
   }
 }
