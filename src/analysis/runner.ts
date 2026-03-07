@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import type { z } from 'zod';
 import { AnalysisResponseSchema, type AnalysisResponse } from './schema.js';
 
 export interface RunnerOptions {
@@ -16,11 +17,20 @@ export class ClaudeRunner {
   }
 
   async run(input: string, systemPrompt: string): Promise<AnalysisResponse> {
-    return this.exec(input, systemPrompt, true);
+    return this.execGeneric(input, systemPrompt, AnalysisResponseSchema, true);
   }
 
-  private exec(input: string, systemPrompt: string, canRetry: boolean): Promise<AnalysisResponse> {
-    return new Promise<AnalysisResponse>((resolve, reject) => {
+  async runWithSchema<T>(input: string, systemPrompt: string, schema: z.ZodType<T>): Promise<T> {
+    return this.execGeneric(input, systemPrompt, schema, true);
+  }
+
+  private execGeneric<T>(
+    input: string,
+    systemPrompt: string,
+    schema: z.ZodType<T>,
+    canRetry: boolean,
+  ): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
       const args = [
         '--print',
         '--output-format',
@@ -83,11 +93,11 @@ export class ClaudeRunner {
 
         try {
           const parsed = JSON.parse(stdout);
-          const validated = AnalysisResponseSchema.parse(parsed);
+          const validated = schema.parse(parsed);
           resolve(validated);
         } catch {
           if (canRetry) {
-            this.exec(input, systemPrompt, false).then(resolve, reject);
+            this.execGeneric(input, systemPrompt, schema, false).then(resolve, reject);
           } else {
             reject(new Error(`Failed to parse JSON response: ${stdout.slice(0, 200)}`));
           }

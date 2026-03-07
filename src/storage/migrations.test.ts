@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMigrations, SCHEMA_SQL } from './migrations.js';
+import { parseMigrations, SCHEMA_SQL, SCHEMA_V4_SQL } from './migrations.js';
 
 describe('SCHEMA_SQL', () => {
   it('contains schema SQL content', () => {
@@ -25,5 +25,12 @@ describe('parseMigrations', () => {
   it('filters out empty statements', () => {
     const statements = parseMigrations('SELECT 1;\n\n;\nSELECT 2;');
     expect(statements).toHaveLength(2);
+  });
+});
+
+describe('SCHEMA_V4_SQL', () => {
+  it('adds pattern_id and artifact columns to suggestions', () => {
+    expect(SCHEMA_V4_SQL).toContain('pattern_id');
+    expect(SCHEMA_V4_SQL).toContain('artifact');
   });
 });

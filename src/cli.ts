@@ -4,6 +4,7 @@ import { init } from './commands/init.js';
 import { status, printStatus } from './commands/status.js';
 import { scan } from './commands/scan.js';
 import { report, printReport, parseReportArgs } from './commands/report.js';
+import { suggest, printSuggestions, parseSuggestArgs } from './commands/suggest.js';
 
 const command = process.argv[2];
 
@@ -34,8 +35,14 @@ async function main(): Promise<void> {
       printReport(result);
       break;
     }
+    case 'suggest': {
+      const suggestOpts = parseSuggestArgs(process.argv.slice(3));
+      const suggestResult = await suggest(suggestOpts);
+      printSuggestions(suggestResult);
+      break;
+    }
     default:
-      console.log('Usage: drift-watch <init|status|scan|report>');
+      console.log('Usage: drift-watch <init|status|scan|report|suggest>');
       process.exit(command ? 1 : 0);
   }
 }

@@ -43,10 +43,12 @@ export interface FindingPattern {
 
 export interface Suggestion {
   id: string;
-  finding_id: string;
+  finding_id: string | null;
+  pattern_id: string | null;
   title: string;
   description: string | null;
   action_type: string | null;
+  artifact: string | null;
   created_at: Date;
 }
 
@@ -190,8 +192,16 @@ export class Repository {
   async insertSuggestion(data: Omit<Suggestion, 'id' | 'created_at'>): Promise<string> {
     const id = ulid();
     await this.conn.execute(
-      'INSERT INTO suggestions (id, finding_id, title, description, action_type) VALUES (?, ?, ?, ?, ?)',
-      [id, data.finding_id, data.title, data.description, data.action_type],
+      'INSERT INTO suggestions (id, finding_id, pattern_id, title, description, action_type, artifact) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [
+        id,
+        data.finding_id ?? null,
+        data.pattern_id ?? null,
+        data.title,
+        data.description,
+        data.action_type,
+        data.artifact ?? null,
+      ],
     );
     return id;
   }
@@ -210,6 +220,30 @@ export class Repository {
       [findingId],
     );
     return rows as Suggestion[];
+  }
+
+  async listSuggestionsByPattern(patternId: string): Promise<Suggestion[]> {
+    const [rows] = await this.conn.execute<RowDataPacket[]>(
+      'SELECT * FROM suggestions WHERE pattern_id = ?',
+      [patternId],
+    );
+    return rows as Suggestion[];
+  }
+
+  async getTopPatterns(limit: number): Promise<Pattern[]> {
+    const [rows] = await this.conn.execute<RowDataPacket[]>(
+      'SELECT * FROM patterns ORDER BY occurrence_count DESC, severity ASC LIMIT ?',
+      [limit],
+    );
+    return rows as Pattern[];
+  }
+
+  async getExampleFindings(patternId: string, limit = 3): Promise<Finding[]> {
+    const [rows] = await this.conn.execute<RowDataPacket[]>(
+      'SELECT f.* FROM findings f JOIN finding_patterns fp ON f.id = fp.finding_id WHERE fp.pattern_id = ? ORDER BY f.created_at DESC LIMIT ?',
+      [patternId, limit],
+    );
+    return rows as Finding[];
   }
 
   // Stats

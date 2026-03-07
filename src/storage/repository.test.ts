@@ -4,7 +4,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import mysql from 'mysql2/promise';
-import { parseMigrations, SCHEMA_SQL, SCHEMA_V2_SQL, SCHEMA_V3_SQL } from './migrations.js';
+import {
+  parseMigrations,
+  SCHEMA_SQL,
+  SCHEMA_V2_SQL,
+  SCHEMA_V3_SQL,
+  SCHEMA_V4_SQL,
+} from './migrations.js';
 import { Repository } from './repository.js';
 import { derivePort } from './dolt.js';
 
@@ -58,6 +64,10 @@ beforeAll(async () => {
   }
   const v3Statements = parseMigrations(SCHEMA_V3_SQL);
   for (const stmt of v3Statements) {
+    await conn.execute(stmt);
+  }
+  const v4Statements = parseMigrations(SCHEMA_V4_SQL);
+  for (const stmt of v4Statements) {
     await conn.execute(stmt);
   }
 
@@ -179,9 +189,11 @@ describe('Repository CRUD', () => {
     it('inserts and retrieves a suggestion', async () => {
       suggestionId = await repo.insertSuggestion({
         finding_id: findingId,
+        pattern_id: null,
         title: 'Add error boundary',
         description: 'Wrap the failing block in try/catch',
         action_type: 'code_change',
+        artifact: null,
       });
       expect(suggestionId).toBeTruthy();
 
@@ -189,9 +201,43 @@ describe('Repository CRUD', () => {
       expect(suggestion?.title).toBe('Add error boundary');
     });
 
+    it('inserts pattern-linked suggestion with artifact', async () => {
+      const id = await repo.insertSuggestion({
+        finding_id: null,
+        pattern_id: patternId,
+        title: 'Add CLAUDE.md rule',
+        description: 'Prevent repeated errors',
+        action_type: 'claude_md_patch',
+        artifact: '## Rule\nDo not repeat this mistake.',
+      });
+      const suggestion = await repo.getSuggestion(id);
+      expect(suggestion?.pattern_id).toBe(patternId);
+      expect(suggestion?.artifact).toContain('Rule');
+      expect(suggestion?.finding_id).toBeNull();
+    });
+
     it('lists suggestions by finding', async () => {
       const suggestions = await repo.listSuggestionsByFinding(findingId);
       expect(suggestions.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('lists suggestions by pattern', async () => {
+      const suggestions = await repo.listSuggestionsByPattern(patternId);
+      expect(suggestions.length).toBeGreaterThanOrEqual(1);
+      expect(suggestions[0].pattern_id).toBe(patternId);
+    });
+  });
+
+  describe('top patterns and example findings', () => {
+    it('returns top patterns ordered by occurrence', async () => {
+      const patterns = await repo.getTopPatterns(5);
+      expect(patterns.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('returns example findings for a pattern', async () => {
+      const findings = await repo.getExampleFindings(patternId);
+      expect(findings.length).toBeGreaterThanOrEqual(1);
+      expect(findings[0].title).toBe('Loop detected');
     });
   });
 

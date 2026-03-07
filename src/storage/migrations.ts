@@ -68,7 +68,13 @@ ALTER TABLE findings ADD COLUMN model VARCHAR(100);
 ALTER TABLE findings ADD COLUMN project VARCHAR(255);
 `;
 
-const CURRENT_VERSION = 3;
+export const SCHEMA_V4_SQL = `
+ALTER TABLE suggestions ADD COLUMN pattern_id VARCHAR(26);
+ALTER TABLE suggestions ADD COLUMN artifact TEXT;
+ALTER TABLE suggestions MODIFY COLUMN finding_id VARCHAR(26) NULL;
+`;
+
+const CURRENT_VERSION = 4;
 
 export function parseMigrations(sql: string): string[] {
   return sql
@@ -120,6 +126,19 @@ export async function applyMigrations(conn: Connection): Promise<void> {
       }
     }
     await conn.execute('REPLACE INTO schema_version (version) VALUES (?)', [3]);
+  }
+
+  if (currentVersion < 4) {
+    const v4Stmts = parseMigrations(SCHEMA_V4_SQL);
+    for (const stmt of v4Stmts) {
+      try {
+        await conn.execute(stmt);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '';
+        if (!msg.includes('already exists')) throw err;
+      }
+    }
+    await conn.execute('REPLACE INTO schema_version (version) VALUES (?)', [4]);
   }
 }
 

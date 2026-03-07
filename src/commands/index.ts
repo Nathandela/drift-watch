@@ -6,3 +6,5 @@ export { scan } from './scan.js';
 export type { ScanResult } from './scan.js';
 export { report, printReport } from './report.js';
 export type { ReportOptions, ReportResult } from './report.js';
+export { suggest, printSuggestions } from './suggest.js';
+export type { SuggestOptions, SuggestResult } from './suggest.js';
