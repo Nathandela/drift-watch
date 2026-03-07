@@ -10,4 +10,29 @@ Agentic AI coding creates emergent behaviors that didn't exist before. **drift-w
 
 ## Status
 
-Early development.
+Early development -- foundational infrastructure in place, implementation pending.
+
+## Getting Started
+
+```bash
+pnpm install
+pnpm check     # type-check + lint + format check
+pnpm test      # run tests
+```
+
+## Development
+
+```bash
+pnpm test:watch    # tests in watch mode
+pnpm lint          # ESLint
+pnpm format        # Prettier auto-format
+pnpm build         # compile TypeScript
+```
+
+## Architecture
+
+See [docs/architecture.md](docs/architecture.md) for planned layers, modules, and data flow.
+
+## Decisions
+
+Architectural decisions are recorded in [docs/adr/](docs/adr/).
