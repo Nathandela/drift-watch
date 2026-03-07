@@ -2,6 +2,8 @@ import { DoltServer } from '../storage/dolt.js';
 import { applyMigrations } from '../storage/migrations.js';
 import { DEFAULT_DATA_DIR } from './config.js';
 import { formatTable } from '../display/table.js';
+import { formatSummary } from '../display/summary.js';
+import type { SummaryData } from '../display/summary.js';
 import type { Connection, RowDataPacket } from 'mysql2/promise';
 
 export interface ReportOptions {
@@ -17,6 +19,7 @@ export interface ReportResult {
   mode: 'patterns' | 'by-model' | 'by-project';
   rows: Record<string, unknown>[];
   empty: boolean;
+  summary?: SummaryData;
 }
 
 export async function report(options: ReportOptions = {}): Promise<ReportResult> {
@@ -34,7 +37,11 @@ export async function report(options: ReportOptions = {}): Promise<ReportResult>
     if (options.byProject) {
       return await queryByProject(conn, options, limit);
     }
-    return await queryPatterns(conn, options, limit);
+    const result = await queryPatterns(conn, options, limit);
+    if (!result.empty) {
+      result.summary = await querySummary(conn);
+    }
+    return result;
   } finally {
     await conn.end();
   }
@@ -83,6 +90,10 @@ async function queryByModel(
     conditions.push('f.created_at >= ?');
     params.push(options.since);
   }
+  if (options.category) {
+    conditions.push('fp.pattern_id IN (SELECT id FROM patterns WHERE category = ?)');
+    params.push(options.category);
+  }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
   params.push(limit);
@@ -110,6 +121,10 @@ async function queryByProject(
     conditions.push('f.created_at >= ?');
     params.push(options.since);
   }
+  if (options.category) {
+    conditions.push('fp.pattern_id IN (SELECT id FROM patterns WHERE category = ?)');
+    params.push(options.category);
+  }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
   params.push(limit);
@@ -122,6 +137,36 @@ async function queryByProject(
     mode: 'by-project',
     rows: rows as Record<string, unknown>[],
     empty: rows.length === 0,
+  };
+}
+
+async function querySummary(conn: Connection): Promise<SummaryData> {
+  const [[countRow]] = (await conn.execute('SELECT COUNT(*) as total FROM findings')) as [
+    [{ total: number }],
+    unknown,
+  ];
+
+  const [[patternCountRow]] = (await conn.execute('SELECT COUNT(*) as total FROM patterns')) as [
+    [{ total: number }],
+    unknown,
+  ];
+
+  const [topRows] = (await conn.execute(
+    'SELECT name, occurrence_count FROM patterns ORDER BY occurrence_count DESC LIMIT 3',
+  )) as [RowDataPacket[], unknown];
+
+  const [projectRows] = (await conn.execute(
+    "SELECT COALESCE(f.project, 'unknown') as project, COUNT(*) as count FROM findings f GROUP BY COALESCE(f.project, 'unknown') ORDER BY count DESC LIMIT 3",
+  )) as [RowDataPacket[], unknown];
+
+  return {
+    totalFindings: countRow.total,
+    totalPatterns: patternCountRow.total,
+    topPatterns: topRows.map((r) => ({ name: String(r.name), count: Number(r.occurrence_count) })),
+    mostAffectedProjects: projectRows.map((r) => ({
+      project: String(r.project),
+      count: Number(r.count),
+    })),
   };
 }
 
@@ -139,6 +184,10 @@ export function printReport(result: ReportResult): void {
 
   switch (result.mode) {
     case 'patterns': {
+      if (result.summary) {
+        console.log(formatSummary(result.summary));
+        console.log('');
+      }
       const headers = ['Title', 'Category', 'Count', 'Severity', 'First seen', 'Last seen'];
       const rows = result.rows.map((r) => [
         String(r.name ?? ''),

@@ -1,7 +1,140 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { parseReportArgs, printReport } from './report.js';
+import type { ReportResult } from './report.js';
 
 vi.mock('../storage/dolt.js');
 vi.mock('../storage/migrations.js');
+
+describe('parseReportArgs', () => {
+  it('returns empty options for no args', () => {
+    expect(parseReportArgs([])).toEqual({});
+  });
+
+  it('parses --by-model flag', () => {
+    expect(parseReportArgs(['--by-model']).byModel).toBe(true);
+  });
+
+  it('parses --by-project flag', () => {
+    expect(parseReportArgs(['--by-project']).byProject).toBe(true);
+  });
+
+  it('parses --since with date string', () => {
+    expect(parseReportArgs(['--since', '2026-02-01']).since).toBe('2026-02-01');
+  });
+
+  it('parses --category with value', () => {
+    expect(parseReportArgs(['--category', 'security']).category).toBe('security');
+  });
+
+  it('parses --limit with number', () => {
+    expect(parseReportArgs(['--limit', '10']).limit).toBe(10);
+  });
+
+  it('parses multiple flags combined', () => {
+    const opts = parseReportArgs([
+      '--since',
+      '2026-01-01',
+      '--category',
+      'security',
+      '--limit',
+      '5',
+    ]);
+    expect(opts.since).toBe('2026-01-01');
+    expect(opts.category).toBe('security');
+    expect(opts.limit).toBe(5);
+  });
+});
+
+describe('printReport', () => {
+  it('prints empty message when no findings', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const result: ReportResult = { mode: 'patterns', rows: [], empty: true };
+    printReport(result);
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining('No findings yet'));
+    spy.mockRestore();
+  });
+
+  it('prints patterns table with correct headers', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const result: ReportResult = {
+      mode: 'patterns',
+      rows: [
+        {
+          name: 'Test',
+          category: 'security',
+          occurrence_count: 3,
+          severity: 'high',
+          created_at: new Date('2026-01-01'),
+          last_seen: new Date('2026-03-01'),
+        },
+      ],
+      empty: false,
+    };
+    printReport(result);
+    const output = spy.mock.calls.map((c) => c[0]).join('\n');
+    expect(output).toContain('Title');
+    expect(output).toContain('Category');
+    expect(output).toContain('Test');
+    spy.mockRestore();
+  });
+
+  it('prints by-model table', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const result: ReportResult = {
+      mode: 'by-model',
+      rows: [{ model: 'claude', finding_count: 10, pattern_count: 3 }],
+      empty: false,
+    };
+    printReport(result);
+    const output = spy.mock.calls.map((c) => c[0]).join('\n');
+    expect(output).toContain('Model');
+    expect(output).toContain('claude');
+    spy.mockRestore();
+  });
+
+  it('prints by-project table', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const result: ReportResult = {
+      mode: 'by-project',
+      rows: [{ project: '/my-app', finding_count: 15, pattern_count: 4 }],
+      empty: false,
+    };
+    printReport(result);
+    const output = spy.mock.calls.map((c) => c[0]).join('\n');
+    expect(output).toContain('Project');
+    expect(output).toContain('/my-app');
+    spy.mockRestore();
+  });
+
+  it('prints summary when available on patterns mode', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const result: ReportResult = {
+      mode: 'patterns',
+      rows: [
+        {
+          name: 'Test',
+          category: 'security',
+          occurrence_count: 1,
+          severity: 'high',
+          created_at: '2026-01-01',
+          last_seen: '2026-03-01',
+        },
+      ],
+      empty: false,
+      summary: {
+        totalFindings: 42,
+        totalPatterns: 5,
+        topPatterns: [{ name: 'Test', count: 10 }],
+        mostAffectedProjects: [{ project: '/app', count: 20 }],
+      },
+    };
+    printReport(result);
+    const output = spy.mock.calls.map((c) => c[0]).join('\n');
+    expect(output).toContain('42');
+    expect(output).toContain('Total findings');
+    spy.mockRestore();
+  });
+});
 
 describe('report', () => {
   let report: typeof import('./report.js').report;
@@ -30,25 +163,32 @@ describe('report', () => {
   });
 
   it('returns default pattern report sorted by occurrence_count', async () => {
-    mockConn.execute.mockResolvedValueOnce([
-      [
-        {
-          name: 'Loop detected',
-          category: 'repeated_mistake',
-          occurrence_count: 5,
-          severity: 'high',
-          created_at: new Date('2026-01-01'),
-          last_seen: new Date('2026-03-01'),
-        },
-      ],
-      [],
-    ]);
+    mockConn.execute
+      .mockResolvedValueOnce([
+        [
+          {
+            name: 'Loop detected',
+            category: 'repeated_mistake',
+            occurrence_count: 5,
+            severity: 'high',
+            created_at: new Date('2026-01-01'),
+            last_seen: new Date('2026-03-01'),
+          },
+        ],
+        [],
+      ])
+      .mockResolvedValueOnce([[{ total: 10 }], []])
+      .mockResolvedValueOnce([[{ total: 3 }], []])
+      .mockResolvedValueOnce([[{ name: 'Loop detected', occurrence_count: 5 }], []])
+      .mockResolvedValueOnce([[{ project: '/app', count: 7 }], []]);
 
     const result = await report({ dataDir: '/fake' });
 
     expect(result.mode).toBe('patterns');
     expect(result.rows).toHaveLength(1);
     expect(result.rows[0].name).toBe('Loop detected');
+    expect(result.summary).toBeDefined();
+    expect(result.summary?.totalFindings).toBe(10);
   });
 
   it('returns empty result with message when no patterns', async () => {
