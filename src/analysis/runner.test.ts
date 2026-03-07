@@ -257,6 +257,55 @@ describe('ClaudeRunner', () => {
       expect(proc.kill).toHaveBeenCalled();
     }, 5000);
 
+    it('retries once on valid JSON that fails zod validation', async () => {
+      const proc1 = createMockProcess();
+      const proc2 = createMockProcess();
+      mockSpawn.mockReturnValueOnce(proc1).mockReturnValueOnce(proc2);
+
+      const runner = new ClaudeRunner();
+      const promise = runner.run('input', 'prompt');
+
+      // Valid JSON but missing required fields
+      emitStdoutAndExit(proc1, JSON.stringify({ wrong_key: true }));
+
+      setTimeout(() => {
+        emitStdoutAndExit(proc2, JSON.stringify(VALID_RESPONSE));
+      }, 50);
+
+      const result = await promise;
+      expect(result).toEqual(VALID_RESPONSE);
+      expect(mockSpawn).toHaveBeenCalledTimes(2);
+    });
+
+    it('throws on non-ENOENT spawn error', async () => {
+      const proc = createMockProcess();
+      mockSpawn.mockReturnValue(proc);
+
+      const runner = new ClaudeRunner();
+      const promise = runner.run('input', 'prompt');
+
+      const err = new Error('spawn claude EACCES') as NodeJS.ErrnoException;
+      err.code = 'EACCES';
+      emitError(proc, err);
+
+      await expect(promise).rejects.toThrow(/EACCES/);
+    });
+
+    it('includes stderr in exit code error', async () => {
+      const proc = createMockProcess();
+      mockSpawn.mockReturnValue(proc);
+
+      const runner = new ClaudeRunner();
+      const promise = runner.run('input', 'prompt');
+
+      process.nextTick(() => {
+        proc.stderr.emit('data', Buffer.from('Something went wrong'));
+        proc.emit('close', 1);
+      });
+
+      await expect(promise).rejects.toThrow(/something went wrong/i);
+    });
+
     it('throws descriptive error when claude not found', async () => {
       const proc = createMockProcess();
       mockSpawn.mockReturnValue(proc);

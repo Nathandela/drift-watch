@@ -37,6 +37,7 @@ export class ClaudeRunner {
       const proc = spawn('claude', args);
 
       let stdout = '';
+      let stderr = '';
       let settled = false;
 
       const timer = setTimeout(() => {
@@ -52,6 +53,10 @@ export class ClaudeRunner {
 
       proc.stdout.on('data', (chunk: Buffer) => {
         stdout += chunk.toString();
+      });
+
+      proc.stderr.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString();
       });
 
       proc.on('error', (err: NodeJS.ErrnoException) => {
@@ -71,7 +76,8 @@ export class ClaudeRunner {
         clearTimeout(timer);
 
         if (exitCode !== 0) {
-          reject(new Error(`Process exited with exit code ${exitCode}`));
+          const detail = stderr ? `: ${stderr.slice(0, 500)}` : '';
+          reject(new Error(`Process exited with exit code ${exitCode}${detail}`));
           return;
         }
 
@@ -83,7 +89,7 @@ export class ClaudeRunner {
           if (canRetry) {
             this.exec(input, systemPrompt, false).then(resolve, reject);
           } else {
-            reject(new Error(`Failed to parse JSON response: ${stdout}`));
+            reject(new Error(`Failed to parse JSON response: ${stdout.slice(0, 200)}`));
           }
         }
       });

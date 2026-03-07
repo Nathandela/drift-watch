@@ -12,11 +12,11 @@ export async function analyze(
   conversations: NormalizedConversation[],
   options?: AnalyzeOptions,
 ): Promise<Finding[]> {
+  const runner = new ClaudeRunner(options);
   const findings: Finding[] = [];
 
   for (const conv of conversations) {
     const systemPrompt = buildSystemPrompt({ project: conv.project, source: conv.source });
-    const runner = new ClaudeRunner(options);
     const response = await runner.run(JSON.stringify(conv), systemPrompt);
     findings.push(...response.findings);
   }
