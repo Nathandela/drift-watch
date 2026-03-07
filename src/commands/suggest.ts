@@ -162,7 +162,7 @@ export function printSuggestions(result: SuggestResult): void {
 }
 
 export function parseSuggestArgs(args: string[]): SuggestOptions {
-  const options: SuggestOptions = { limit: 5 };
+  const options: SuggestOptions = {};
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
       case '--pattern':

@@ -7,9 +7,9 @@ vi.mock('../storage/migrations.js');
 vi.mock('../analysis/runner.js');
 
 describe('parseSuggestArgs', () => {
-  it('returns defaults for no args', () => {
+  it('returns empty options for no args', () => {
     const opts = parseSuggestArgs([]);
-    expect(opts.limit).toBe(5);
+    expect(opts.limit).toBeUndefined();
     expect(opts.patternId).toBeUndefined();
   });
 
@@ -207,6 +207,13 @@ describe('suggest', () => {
     const result = await suggest({ dataDir: '/fake', patternId: 'p1', limit: 5 });
     expect(result.empty).toBe(false);
     expect(result.patterns[0].id).toBe('p1');
+  });
+
+  it('returns empty when --pattern ID does not exist', async () => {
+    mockConn.execute.mockResolvedValueOnce([[], []]);
+    const result = await suggest({ dataDir: '/fake', patternId: 'nonexistent' });
+    expect(result.empty).toBe(true);
+    expect(result.suggestions).toHaveLength(0);
   });
 
   it('closes connection after execution', async () => {
