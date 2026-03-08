@@ -13,13 +13,20 @@ export async function analyze(
   options?: AnalyzeOptions,
 ): Promise<Finding[]> {
   const runner = new ClaudeRunner(options);
+  const concurrency = Math.min(conversations.length, 3);
   const findings: Finding[] = [];
+  const queue = [...conversations];
 
-  for (const conv of conversations) {
-    const systemPrompt = buildSystemPrompt({ project: conv.project, source: conv.source });
-    const response = await runner.run(JSON.stringify(conv), systemPrompt);
-    findings.push(...response.findings);
-  }
+  const worker = async () => {
+    while (queue.length > 0) {
+      const conv = queue.shift();
+      if (!conv) continue;
+      const systemPrompt = buildSystemPrompt({ project: conv.project, source: conv.source });
+      const response = await runner.run(JSON.stringify(conv), systemPrompt);
+      findings.push(...response.findings);
+    }
+  };
 
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
   return findings;
 }

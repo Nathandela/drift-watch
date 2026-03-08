@@ -16,6 +16,7 @@
     "format": "prettier --write 'src/**/*.ts'",
     "format:check": "prettier --check 'src/**/*.ts'",
     "check": "tsc --noEmit && eslint src/ && prettier --check 'src/**/*.ts'",
+    "prepublishOnly": "pnpm run build",
     "prepare": "husky"
   },
   "keywords": [

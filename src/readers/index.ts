@@ -1,4 +1,5 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
+import os from 'node:os';
 import { join, basename } from 'node:path';
 import type { NormalizedConversation } from './types.js';
 import { readClaudeSession } from './claude.js';
@@ -42,8 +43,12 @@ async function findFiles(dir: string, pattern: RegExp, since?: Date): Promise<st
         results.push(fullPath);
       }
     }
-  } catch {
-    // directory not readable, skip
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'EACCES' || code === 'EPERM') {
+      console.warn(`Warning: permission denied reading ${dir}`);
+    }
+    // ENOENT is expected for missing directories, ignore silently
   }
   return results;
 }
@@ -103,7 +108,7 @@ async function discoverGemini(base: string, since?: Date): Promise<NormalizedCon
   return results;
 }
 
-const defaultHome = process.env.HOME ?? '~';
+const defaultHome = process.env.HOME ?? os.homedir();
 
 export async function discoverConversations(
   options: DiscoverOptions = {},

@@ -1,6 +1,6 @@
 import { DoltServer } from '../storage/dolt.js';
 import { Repository } from '../storage/repository.js';
-import { DEFAULT_DATA_DIR } from './config.js';
+import { DEFAULT_DATA_DIR } from '../config/index.js';
 
 export interface StatusResult {
   serverRunning: boolean;
@@ -27,17 +27,20 @@ export async function status(dataDir = DEFAULT_DATA_DIR): Promise<StatusResult> 
   const conn = await server.connect();
   const repo = new Repository(conn);
 
-  const tableCounts = await repo.getTableCounts();
-  const lastScan = await repo.getLastScan();
-  await conn.end();
+  try {
+    const tableCounts = await repo.getTableCounts();
+    const lastScan = await repo.getLastScan();
 
-  return {
-    serverRunning: true,
-    port: server.port,
-    tableCounts,
-    lastScanAt: lastScan?.started_at?.toISOString() ?? null,
-    lastScanStatus: lastScan?.status ?? null,
-  };
+    return {
+      serverRunning: true,
+      port: server.port,
+      tableCounts,
+      lastScanAt: lastScan?.started_at?.toISOString() ?? null,
+      lastScanStatus: lastScan?.status ?? null,
+    };
+  } finally {
+    await conn.end();
+  }
 }
 
 export function printStatus(result: StatusResult): void {

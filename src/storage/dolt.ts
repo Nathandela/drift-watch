@@ -71,6 +71,21 @@ export class DoltServer {
     const pid = this.readPid();
     if (pid === null) return;
     try {
+      // Verify it's a Dolt process before killing
+      const { execFileSync } = await import('node:child_process');
+      try {
+        const cmdline = execFileSync('ps', ['-p', String(pid), '-o', 'comm='], {
+          encoding: 'utf-8',
+        }).trim();
+        if (!cmdline.includes('dolt')) {
+          this.removePidFile();
+          return;
+        }
+      } catch {
+        // ps failed, process probably gone
+        this.removePidFile();
+        return;
+      }
       process.kill(pid, 'SIGTERM');
     } catch {
       // process already gone
@@ -115,6 +130,10 @@ export class DoltServer {
   private async waitForReady(timeoutMs = 10000): Promise<void> {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
+      // Check if process died
+      if (!(await this.isRunning())) {
+        throw new Error('Dolt server process exited unexpectedly');
+      }
       try {
         const conn = await mysql.createConnection({
           host: '127.0.0.1',

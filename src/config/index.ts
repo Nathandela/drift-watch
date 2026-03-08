@@ -24,6 +24,8 @@ function defaultDataDir(): string {
   return path.join(os.homedir(), '.drift-watch');
 }
 
+export const DEFAULT_DATA_DIR = defaultDataDir();
+
 function configPath(dataDir: string): string {
   return path.join(dataDir, 'config.json');
 }
@@ -37,7 +39,9 @@ export function readConfig(dataDir?: string): DriftWatchConfig {
   }
 
   const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-  return { ...DEFAULT_CONFIG, ...raw };
+  const validKeys = new Set(Object.keys(DEFAULT_CONFIG));
+  const filtered = Object.fromEntries(Object.entries(raw).filter(([k]) => validKeys.has(k)));
+  return { ...DEFAULT_CONFIG, ...filtered };
 }
 
 export function writeConfig(config: Partial<DriftWatchConfig>, dataDir?: string): void {
@@ -58,7 +62,12 @@ export function getConfigValue(
   return config[key as keyof DriftWatchConfig];
 }
 
+const VALID_KEYS = new Set(Object.keys(DEFAULT_CONFIG));
+
 export function setConfigValue(key: string, value: string, dataDir?: string): void {
+  if (!VALID_KEYS.has(key)) {
+    throw new Error(`Unknown config key: "${key}". Valid keys: ${[...VALID_KEYS].join(', ')}`);
+  }
   let parsed: string | number | null | string[];
 
   if (value === 'null') {

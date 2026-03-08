@@ -93,7 +93,7 @@ describe('scan', () => {
     const result = await scan('/fake-dir');
 
     expect(discoverConversations).toHaveBeenCalled();
-    expect(analyze).toHaveBeenCalledWith([conv]);
+    expect(analyze).toHaveBeenCalledWith([conv], { model: 'sonnet' });
     expect(result.sessionsScanned).toBe(1);
     expect(result.findingsCount).toBe(1);
   });
@@ -169,5 +169,30 @@ describe('scan', () => {
 
     await expect(scan('/fake-dir')).rejects.toThrow('fail');
     expect(mockConn.end).toHaveBeenCalled();
+  });
+
+  it('continues when one project group fails but another succeeds', async () => {
+    const conv1 = makeConversation({ project: '/ok-project', sessionId: 'sess-ok' });
+    const conv2 = makeConversation({ project: '/bad-project', sessionId: 'sess-bad' });
+    discoverConversations.mockResolvedValue([conv1, conv2]);
+
+    analyze.mockResolvedValueOnce([makeFinding()]).mockRejectedValueOnce(new Error('LLM timeout'));
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = await scan('/fake-dir');
+
+    expect(result.findingsCount).toBe(1);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('1 project group(s) failed'));
+    warnSpy.mockRestore();
+  });
+
+  it('throws when all project groups fail', async () => {
+    const conv1 = makeConversation({ project: '/bad-1', sessionId: 'sess-1' });
+    const conv2 = makeConversation({ project: '/bad-2', sessionId: 'sess-2' });
+    discoverConversations.mockResolvedValue([conv1, conv2]);
+
+    analyze.mockRejectedValue(new Error('LLM timeout'));
+
+    await expect(scan('/fake-dir')).rejects.toThrow('LLM timeout');
   });
 });

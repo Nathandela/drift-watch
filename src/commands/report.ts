@@ -1,6 +1,6 @@
 import { DoltServer } from '../storage/dolt.js';
 import { applyMigrations } from '../storage/migrations.js';
-import { DEFAULT_DATA_DIR } from './config.js';
+import { DEFAULT_DATA_DIR } from '../config/index.js';
 import { formatTable } from '../display/table.js';
 import { formatSummary } from '../display/summary.js';
 import type { SummaryData } from '../display/summary.js';
@@ -28,9 +28,9 @@ export async function report(options: ReportOptions = {}): Promise<ReportResult>
 
   const server = new DoltServer(dataDir);
   const conn = await server.connect();
-  await applyMigrations(conn);
 
   try {
+    await applyMigrations(conn);
     if (options.byModel) {
       return await queryByModel(conn, options, limit);
     }
@@ -39,7 +39,7 @@ export async function report(options: ReportOptions = {}): Promise<ReportResult>
     }
     const result = await queryPatterns(conn, options, limit);
     if (!result.empty) {
-      result.summary = await querySummary(conn);
+      result.summary = await querySummary(conn, options);
     }
     return result;
   } finally {
@@ -140,23 +140,67 @@ async function queryByProject(
   };
 }
 
-async function querySummary(conn: Connection): Promise<SummaryData> {
-  const [[countRow]] = (await conn.execute('SELECT COUNT(*) as total FROM findings')) as [
-    [{ total: number }],
-    unknown,
-  ];
+async function querySummary(conn: Connection, options: ReportOptions): Promise<SummaryData> {
+  const findingConditions: string[] = [];
+  const findingParams: (string | number)[] = [];
+  if (options.since) {
+    findingConditions.push('created_at >= ?');
+    findingParams.push(options.since);
+  }
+  if (options.category) {
+    findingConditions.push(
+      'id IN (SELECT fp.finding_id FROM finding_patterns fp JOIN patterns p ON fp.pattern_id = p.id WHERE p.category = ?)',
+    );
+    findingParams.push(options.category);
+  }
+  const findingWhere = findingConditions.length ? `WHERE ${findingConditions.join(' AND ')}` : '';
 
-  const [[patternCountRow]] = (await conn.execute('SELECT COUNT(*) as total FROM patterns')) as [
-    [{ total: number }],
-    unknown,
-  ];
+  const [[countRow]] = (await conn.execute(
+    `SELECT COUNT(*) as total FROM findings ${findingWhere}`,
+    findingParams,
+  )) as [[{ total: number }], unknown];
+
+  const patternConditions: string[] = [];
+  const patternParams: (string | number)[] = [];
+  if (options.since) {
+    patternConditions.push(
+      'id IN (SELECT fp.pattern_id FROM finding_patterns fp JOIN findings f ON fp.finding_id = f.id WHERE f.created_at >= ?)',
+    );
+    patternParams.push(options.since);
+  }
+  if (options.category) {
+    patternConditions.push('category = ?');
+    patternParams.push(options.category);
+  }
+  const patternWhere = patternConditions.length ? `WHERE ${patternConditions.join(' AND ')}` : '';
+
+  const [[patternCountRow]] = (await conn.execute(
+    `SELECT COUNT(*) as total FROM patterns ${patternWhere}`,
+    patternParams,
+  )) as [[{ total: number }], unknown];
 
   const [topRows] = (await conn.execute(
-    'SELECT name, occurrence_count FROM patterns ORDER BY occurrence_count DESC LIMIT 3',
+    `SELECT name, occurrence_count FROM patterns ${patternWhere} ORDER BY occurrence_count DESC LIMIT 3`,
+    patternParams,
   )) as [RowDataPacket[], unknown];
 
+  const projectConditions: string[] = [];
+  const projectParams: (string | number)[] = [];
+  if (options.since) {
+    projectConditions.push('f.created_at >= ?');
+    projectParams.push(options.since);
+  }
+  if (options.category) {
+    projectConditions.push(
+      'f.id IN (SELECT fp.finding_id FROM finding_patterns fp JOIN patterns p ON fp.pattern_id = p.id WHERE p.category = ?)',
+    );
+    projectParams.push(options.category);
+  }
+  const projectWhere = projectConditions.length ? `WHERE ${projectConditions.join(' AND ')}` : '';
+
   const [projectRows] = (await conn.execute(
-    "SELECT COALESCE(f.project, 'unknown') as project, COUNT(*) as count FROM findings f GROUP BY COALESCE(f.project, 'unknown') ORDER BY count DESC LIMIT 3",
+    `SELECT COALESCE(f.project, 'unknown') as project, COUNT(*) as count FROM findings f ${projectWhere} GROUP BY COALESCE(f.project, 'unknown') ORDER BY count DESC LIMIT 3`,
+    projectParams,
   )) as [RowDataPacket[], unknown];
 
   return {
@@ -223,6 +267,21 @@ export function printReport(result: ReportResult): void {
   }
 }
 
+export function parseRelativeDate(input: string): string {
+  const match = input.match(/^(\d+)([dwm])$/);
+  if (!match) return input; // assume ISO date
+  const [, num, unit] = match;
+  const n = parseInt(num, 10);
+  const now = new Date();
+  if (unit === 'm') {
+    now.setMonth(now.getMonth() - n);
+  } else {
+    const days = unit === 'w' ? n * 7 : n;
+    now.setDate(now.getDate() - days);
+  }
+  return now.toISOString();
+}
+
 export function parseReportArgs(args: string[]): ReportOptions {
   const options: ReportOptions = {};
   for (let i = 0; i < args.length; i++) {
@@ -234,14 +293,22 @@ export function parseReportArgs(args: string[]): ReportOptions {
         options.byProject = true;
         break;
       case '--since':
-        options.since = args[++i];
+        if (i + 1 >= args.length) throw new Error('--since requires a value');
+        options.since = parseRelativeDate(args[++i]);
         break;
       case '--category':
+        if (i + 1 >= args.length) throw new Error('--category requires a value');
         options.category = args[++i];
         break;
-      case '--limit':
-        options.limit = parseInt(args[++i], 10);
+      case '--limit': {
+        if (i + 1 >= args.length) throw new Error('--limit requires a value');
+        const n = parseInt(args[++i], 10);
+        if (isNaN(n) || n < 1) {
+          throw new Error('--limit must be a positive integer');
+        }
+        options.limit = n;
         break;
+      }
     }
   }
   return options;

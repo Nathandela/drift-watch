@@ -24,8 +24,13 @@ const VALID_RESPONSE: AnalysisResponse = {
 
 const EMPTY_RESPONSE: AnalysisResponse = { findings: [] };
 
+interface MockStdin extends EventEmitter {
+  write: ReturnType<typeof vi.fn>;
+  end: ReturnType<typeof vi.fn>;
+}
+
 interface MockChildProcess extends EventEmitter {
-  stdin: { write: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> };
+  stdin: MockStdin;
   stdout: EventEmitter;
   stderr: EventEmitter;
   kill: ReturnType<typeof vi.fn>;
@@ -34,7 +39,10 @@ interface MockChildProcess extends EventEmitter {
 
 function createMockProcess(): MockChildProcess {
   const proc = new EventEmitter() as MockChildProcess;
-  proc.stdin = { write: vi.fn(), end: vi.fn() };
+  const stdin = new EventEmitter() as MockStdin;
+  stdin.write = vi.fn();
+  stdin.end = vi.fn();
+  proc.stdin = stdin;
   proc.stdout = new EventEmitter();
   proc.stderr = new EventEmitter();
   proc.kill = vi.fn();

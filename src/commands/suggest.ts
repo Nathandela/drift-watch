@@ -4,7 +4,7 @@ import { Repository } from '../storage/repository.js';
 import { ClaudeRunner } from '../analysis/runner.js';
 import { SUGGEST_SYSTEM_PROMPT } from '../analysis/suggest-prompt.js';
 import { SuggestResponseSchema } from '../analysis/suggest-schema.js';
-import { DEFAULT_DATA_DIR } from './config.js';
+import { DEFAULT_DATA_DIR, readConfig } from '../config/index.js';
 import type { Pattern, Finding } from '../storage/repository.js';
 
 export interface SuggestOptions {
@@ -39,9 +39,9 @@ export async function suggest(options: SuggestOptions = {}): Promise<SuggestResu
 
   const server = new DoltServer(dataDir);
   const conn = await server.connect();
-  await applyMigrations(conn);
 
   try {
+    await applyMigrations(conn);
     const repo = new Repository(conn);
     const patterns = await getPatterns(repo, options.patternId, limit);
 
@@ -49,21 +49,29 @@ export async function suggest(options: SuggestOptions = {}): Promise<SuggestResu
       return { patterns: [], suggestions: [], empty: true };
     }
 
-    const allSuggestions: SuggestResultItem[] = [];
-    const runner = new ClaudeRunner();
+    const existingSuggestions = await repo.patternsWithSuggestions();
+    const patternsToProcess = patterns.filter((p) => !existingSuggestions.has(p.id));
 
-    for (const pattern of patterns) {
+    if (patternsToProcess.length === 0) {
+      return { patterns: [], suggestions: [], empty: true };
+    }
+
+    const allSuggestions: SuggestResultItem[] = [];
+    const config = readConfig(dataDir);
+    const runner = new ClaudeRunner({ model: config.claude_model });
+
+    for (const pattern of patternsToProcess) {
       const items = await generateForPattern(runner, repo, pattern);
       allSuggestions.push(...items);
     }
 
     await storeSuggestions(repo, allSuggestions);
     await repo.doltCommit(
-      `suggest: ${allSuggestions.length} suggestion(s) for ${patterns.length} pattern(s)`,
+      `suggest: ${allSuggestions.length} suggestion(s) for ${patternsToProcess.length} pattern(s)`,
     );
 
     return {
-      patterns: patterns.map((p) => ({ id: p.id, name: p.name, category: p.category })),
+      patterns: patternsToProcess.map((p) => ({ id: p.id, name: p.name, category: p.category })),
       suggestions: allSuggestions,
       empty: false,
     };
@@ -166,11 +174,18 @@ export function parseSuggestArgs(args: string[]): SuggestOptions {
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
       case '--pattern':
+        if (i + 1 >= args.length) throw new Error('--pattern requires a value');
         options.patternId = args[++i];
         break;
-      case '--limit':
-        options.limit = parseInt(args[++i], 10);
+      case '--limit': {
+        if (i + 1 >= args.length) throw new Error('--limit requires a value');
+        const n = parseInt(args[++i], 10);
+        if (isNaN(n) || n < 1) {
+          throw new Error('--limit must be a positive integer');
+        }
+        options.limit = n;
         break;
+      }
     }
   }
   return options;

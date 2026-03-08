@@ -45,6 +45,7 @@ export function readClaudeSession(
   const toolUses: NormalizedToolUse[] = [];
   let model: string | undefined;
   let sessionDate: string | undefined;
+  let cwd: string | undefined;
 
   const lines = content.split('\n').filter((l) => l.trim());
 
@@ -58,6 +59,7 @@ export function readClaudeSession(
 
     if (!parsed.type || (parsed.type !== 'user' && parsed.type !== 'assistant')) continue;
     if (!sessionDate && parsed.timestamp) sessionDate = parsed.timestamp;
+    if (!cwd && parsed.cwd) cwd = parsed.cwd;
 
     const msg = parsed.message;
     if (!msg) continue;
@@ -93,7 +95,7 @@ export function readClaudeSession(
   return {
     source: 'claude',
     model,
-    project,
+    project: cwd ?? project,
     sessionId,
     sessionDate: sessionDate ?? '',
     messages,

@@ -21,6 +21,8 @@ export interface Finding {
   severity: string;
   model: string | null;
   project: string | null;
+  evidence: string | null;
+  tool_context: string | null;
   created_at: Date;
 }
 
@@ -117,7 +119,7 @@ export class Repository {
   async insertFinding(data: Omit<Finding, 'id' | 'created_at'>): Promise<string> {
     const id = ulid();
     await this.conn.execute(
-      'INSERT INTO findings (id, scan_id, session_id, source, title, description, severity, model, project) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO findings (id, scan_id, session_id, source, title, description, severity, model, project, evidence, tool_context) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         id,
         data.scan_id,
@@ -128,6 +130,8 @@ export class Repository {
         data.severity,
         data.model ?? null,
         data.project ?? null,
+        data.evidence ?? null,
+        data.tool_context ?? null,
       ],
     );
     return id;
@@ -228,6 +232,13 @@ export class Repository {
       [patternId],
     );
     return rows as Suggestion[];
+  }
+
+  async patternsWithSuggestions(): Promise<Set<string>> {
+    const [rows] = await this.conn.execute<RowDataPacket[]>(
+      'SELECT DISTINCT pattern_id FROM suggestions WHERE pattern_id IS NOT NULL',
+    );
+    return new Set((rows as Array<{ pattern_id: string }>).map((r) => r.pattern_id));
   }
 
   async getTopPatterns(limit: number): Promise<Pattern[]> {

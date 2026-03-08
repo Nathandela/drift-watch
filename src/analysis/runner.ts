@@ -29,7 +29,14 @@ export class ClaudeRunner {
     systemPrompt: string,
     schema: z.ZodType<T>,
     canRetry: boolean,
+    deadline?: number,
   ): Promise<T> {
+    const effectiveDeadline = deadline ?? Date.now() + this.timeoutMs;
+    const remaining = effectiveDeadline - Date.now();
+    if (remaining <= 0) {
+      return Promise.reject(new Error('Timeout budget exhausted'));
+    }
+
     return new Promise<T>((resolve, reject) => {
       const args = [
         '--print',
@@ -56,7 +63,11 @@ export class ClaudeRunner {
           proc.kill();
           reject(new Error(`Process timeout after ${this.timeoutMs}ms`));
         }
-      }, this.timeoutMs);
+      }, remaining);
+
+      proc.stdin.on('error', () => {
+        // Ignore EPIPE - process may have exited before reading all input
+      });
 
       proc.stdin.write(input);
       proc.stdin.end();
@@ -97,9 +108,12 @@ export class ClaudeRunner {
           resolve(validated);
         } catch {
           if (canRetry) {
-            this.execGeneric(input, systemPrompt, schema, false).then(resolve, reject);
+            this.execGeneric(input, systemPrompt, schema, false, effectiveDeadline).then(
+              resolve,
+              reject,
+            );
           } else {
-            reject(new Error(`Failed to parse JSON response: ${stdout.slice(0, 200)}`));
+            reject(new Error(`Failed to parse JSON response: ${stdout.slice(0, 500)}`));
           }
         }
       });

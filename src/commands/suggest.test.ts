@@ -26,6 +26,18 @@ describe('parseSuggestArgs', () => {
     expect(opts.patternId).toBe('xyz');
     expect(opts.limit).toBe(2);
   });
+
+  it('throws when --limit is not a positive integer', () => {
+    expect(() => parseSuggestArgs(['--limit', '0'])).toThrow('--limit must be a positive integer');
+    expect(() => parseSuggestArgs(['--limit', 'abc'])).toThrow(
+      '--limit must be a positive integer',
+    );
+  });
+
+  it('throws when flag is missing required value', () => {
+    expect(() => parseSuggestArgs(['--limit'])).toThrow('--limit requires a value');
+    expect(() => parseSuggestArgs(['--pattern'])).toThrow('--pattern requires a value');
+  });
 });
 
 describe('printSuggestions', () => {

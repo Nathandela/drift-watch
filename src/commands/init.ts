@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DoltServer } from '../storage/dolt.js';
 import { applyMigrations } from '../storage/migrations.js';
-import { DEFAULT_DATA_DIR } from './config.js';
+import { DEFAULT_DATA_DIR, readConfig, writeConfig } from '../config/index.js';
 
 function checkCli(command: string, versionArg: string): string {
   try {
@@ -42,8 +42,15 @@ export async function init(dataDir = DEFAULT_DATA_DIR): Promise<void> {
   // Start server and apply schema
   const server = new DoltServer(dataDir);
   const conn = await server.connect();
-  await applyMigrations(conn);
-  await conn.end();
+  try {
+    await applyMigrations(conn);
+  } finally {
+    await conn.end();
+  }
+
+  // Create default config if it doesn't exist
+  const config = readConfig(dataDir);
+  writeConfig(config, dataDir);
 
   console.log(`Drift-watch initialized at ${dataDir}`);
   console.log(`Dolt server running on port ${server.port}`);

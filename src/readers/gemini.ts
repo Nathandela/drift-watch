@@ -71,7 +71,7 @@ export function readGeminiSession(raw: string): NormalizedConversation {
         for (const tc of msg.toolCalls) {
           const resultStr =
             tc.result?.[0]?.functionResponse?.response != null
-              ? String(tc.result[0].functionResponse.response)
+              ? JSON.stringify(tc.result[0].functionResponse.response)
               : undefined;
           toolUses.push({
             name: tc.name ?? 'unknown',

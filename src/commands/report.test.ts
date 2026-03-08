@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { parseReportArgs, printReport } from './report.js';
+import { parseReportArgs, parseRelativeDate, printReport } from './report.js';
 import type { ReportResult } from './report.js';
 
 vi.mock('../storage/dolt.js');
@@ -30,6 +30,23 @@ describe('parseReportArgs', () => {
     expect(parseReportArgs(['--limit', '10']).limit).toBe(10);
   });
 
+  it('throws when --limit is not a positive integer', () => {
+    expect(() => parseReportArgs(['--limit', '0'])).toThrow('--limit must be a positive integer');
+    expect(() => parseReportArgs(['--limit', '-1'])).toThrow('--limit must be a positive integer');
+    expect(() => parseReportArgs(['--limit', 'abc'])).toThrow('--limit must be a positive integer');
+  });
+
+  it('throws when flag is missing required value', () => {
+    expect(() => parseReportArgs(['--since'])).toThrow('--since requires a value');
+    expect(() => parseReportArgs(['--category'])).toThrow('--category requires a value');
+    expect(() => parseReportArgs(['--limit'])).toThrow('--limit requires a value');
+  });
+
+  it('parses --since with relative date', () => {
+    const result = parseReportArgs(['--since', '7d']);
+    expect(result.since).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
   it('parses multiple flags combined', () => {
     const opts = parseReportArgs([
       '--since',
@@ -42,6 +59,40 @@ describe('parseReportArgs', () => {
     expect(opts.since).toBe('2026-01-01');
     expect(opts.category).toBe('security');
     expect(opts.limit).toBe(5);
+  });
+});
+
+describe('parseRelativeDate', () => {
+  it('converts "7d" to approximately 7 days ago', () => {
+    const result = parseRelativeDate('7d');
+    const date = new Date(result);
+    const diff = Date.now() - date.getTime();
+    expect(diff).toBeGreaterThan(6 * 86400000);
+    expect(diff).toBeLessThan(8 * 86400000);
+  });
+
+  it('converts "2w" to approximately 14 days ago', () => {
+    const result = parseRelativeDate('2w');
+    const date = new Date(result);
+    const diff = Date.now() - date.getTime();
+    expect(diff).toBeGreaterThan(13 * 86400000);
+    expect(diff).toBeLessThan(15 * 86400000);
+  });
+
+  it('converts "1m" using calendar month subtraction', () => {
+    const result = parseRelativeDate('1m');
+    const date = new Date(result);
+    const now = new Date();
+    const expectedMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+    expect(date.getMonth()).toBe(expectedMonth);
+  });
+
+  it('passes through ISO date strings unchanged', () => {
+    expect(parseRelativeDate('2026-01-15')).toBe('2026-01-15');
+  });
+
+  it('passes through invalid formats unchanged', () => {
+    expect(parseRelativeDate('foo')).toBe('foo');
   });
 });
 

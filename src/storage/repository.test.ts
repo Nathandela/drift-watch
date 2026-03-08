@@ -10,6 +10,7 @@ import {
   SCHEMA_V2_SQL,
   SCHEMA_V3_SQL,
   SCHEMA_V4_SQL,
+  SCHEMA_V5_SQL,
 } from './migrations.js';
 import { Repository } from './repository.js';
 import { derivePort } from './dolt.js';
@@ -70,6 +71,10 @@ beforeAll(async () => {
   for (const stmt of v4Statements) {
     await conn.execute(stmt);
   }
+  const v5Statements = parseMigrations(SCHEMA_V5_SQL);
+  for (const stmt of v5Statements) {
+    await conn.execute(stmt);
+  }
 
   repo = new Repository(conn);
 }, 30000);
@@ -83,7 +88,11 @@ afterAll(async () => {
       // process already gone
     }
   }
-  fs.rmSync(TEST_DIR, { recursive: true, force: true });
+  try {
+    fs.rmSync(TEST_DIR, { recursive: true, force: true });
+  } catch {
+    // Dolt may still hold file locks briefly after SIGTERM
+  }
 });
 
 describe('Repository CRUD', () => {
@@ -158,6 +167,8 @@ describe('Repository CRUD', () => {
         severity: 'high',
         model: 'claude-sonnet-4-20250514',
         project: '/my-project',
+        evidence: 'Line 42: repeated call to fs.readFile',
+        tool_context: null,
       });
       expect(findingId).toBeTruthy();
 

@@ -4,7 +4,7 @@ import { Repository } from '../storage/repository.js';
 import { discoverConversations } from '../readers/index.js';
 import { analyze } from '../analysis/index.js';
 import { matchOrCreatePattern } from '../storage/patterns.js';
-import { DEFAULT_DATA_DIR } from './config.js';
+import { DEFAULT_DATA_DIR, readConfig } from '../config/index.js';
 import type { NormalizedConversation } from '../readers/types.js';
 
 export interface ScanResult {
@@ -26,12 +26,13 @@ function groupByProject(
 }
 
 export async function scan(dataDir = DEFAULT_DATA_DIR): Promise<ScanResult> {
+  const config = readConfig(dataDir);
   const server = new DoltServer(dataDir);
   const conn = await server.connect();
-  await applyMigrations(conn);
-  const repo = new Repository(conn);
 
   try {
+    await applyMigrations(conn);
+    const repo = new Repository(conn);
     // Read cursors from last completed scan
     const cursors = await repo.getLatestCursors();
     const since = cursors?.lastScanTime ? new Date(cursors.lastScanTime) : undefined;
@@ -57,10 +58,11 @@ export async function scan(dataDir = DEFAULT_DATA_DIR): Promise<ScanResult> {
     // Group by project and analyze in batches
     const groups = groupByProject(conversations);
     let totalFindings = 0;
+    const errors: Array<{ project: string; error: Error }> = [];
 
-    try {
-      for (const [, batch] of groups) {
-        const findings = await analyze(batch);
+    for (const [projectKey, batch] of groups) {
+      try {
+        const findings = await analyze(batch, { model: config.claude_model });
 
         for (const finding of findings) {
           const findingId = await repo.insertFinding({
@@ -72,22 +74,36 @@ export async function scan(dataDir = DEFAULT_DATA_DIR): Promise<ScanResult> {
             severity: String(finding.severity),
             model: finding.model ?? null,
             project: finding.project ?? null,
+            evidence: finding.evidence ?? null,
+            tool_context: finding.tool_context ?? null,
           });
 
           await matchOrCreatePattern(repo, finding, findingId);
         }
 
         totalFindings += findings.length;
+      } catch (err) {
+        errors.push({ project: projectKey, error: err as Error });
       }
-    } catch (err) {
-      await repo.updateScan(scanId, {
-        finished_at: new Date(),
-        status: 'failed',
-        sessions_scanned: conversations.length,
-        findings_count: totalFindings,
-      });
-      await repo.doltCommit(`scan: failed after ${totalFindings} finding(s)`);
-      throw err;
+    }
+
+    if (errors.length > 0 && totalFindings === 0) {
+      // All groups failed - record failure and throw
+      try {
+        await repo.updateScan(scanId, {
+          finished_at: new Date(),
+          status: 'failed',
+          sessions_scanned: conversations.length,
+          findings_count: totalFindings,
+        });
+        await repo.doltCommit(`scan: failed after ${totalFindings} finding(s)`);
+      } catch {
+        // Best-effort: don't mask the original analysis error
+      }
+      throw errors[0].error;
+    }
+    if (errors.length > 0) {
+      console.warn(`Warning: ${errors.length} project group(s) failed during scan`);
     }
 
     // Update scan record with cursor based on scan start time

@@ -74,7 +74,12 @@ ALTER TABLE suggestions ADD COLUMN artifact TEXT;
 ALTER TABLE suggestions MODIFY COLUMN finding_id VARCHAR(26) NULL;
 `;
 
-const CURRENT_VERSION = 4;
+export const SCHEMA_V5_SQL = `
+ALTER TABLE findings ADD COLUMN evidence TEXT;
+ALTER TABLE findings ADD COLUMN tool_context TEXT;
+`;
+
+const CURRENT_VERSION = 5;
 
 export function parseMigrations(sql: string): string[] {
   return sql
@@ -109,7 +114,13 @@ export async function applyMigrations(conn: Connection): Promise<void> {
         await conn.execute(stmt);
       } catch (err) {
         const msg = err instanceof Error ? err.message : '';
-        if (!msg.includes('already exists')) throw err;
+        const code = (err as { code?: string }).code;
+        if (
+          code !== 'ER_DUP_FIELDNAME' &&
+          code !== 'ER_TABLE_EXISTS_ERROR' &&
+          !msg.includes('Duplicate column name')
+        )
+          throw err;
       }
     }
     await conn.execute('REPLACE INTO schema_version (version) VALUES (?)', [2]);
@@ -122,7 +133,13 @@ export async function applyMigrations(conn: Connection): Promise<void> {
         await conn.execute(stmt);
       } catch (err) {
         const msg = err instanceof Error ? err.message : '';
-        if (!msg.includes('already exists')) throw err;
+        const code = (err as { code?: string }).code;
+        if (
+          code !== 'ER_DUP_FIELDNAME' &&
+          code !== 'ER_TABLE_EXISTS_ERROR' &&
+          !msg.includes('Duplicate column name')
+        )
+          throw err;
       }
     }
     await conn.execute('REPLACE INTO schema_version (version) VALUES (?)', [3]);
@@ -135,10 +152,35 @@ export async function applyMigrations(conn: Connection): Promise<void> {
         await conn.execute(stmt);
       } catch (err) {
         const msg = err instanceof Error ? err.message : '';
-        if (!msg.includes('already exists')) throw err;
+        const code = (err as { code?: string }).code;
+        if (
+          code !== 'ER_DUP_FIELDNAME' &&
+          code !== 'ER_TABLE_EXISTS_ERROR' &&
+          !msg.includes('Duplicate column name')
+        )
+          throw err;
       }
     }
     await conn.execute('REPLACE INTO schema_version (version) VALUES (?)', [4]);
+  }
+
+  if (currentVersion < 5) {
+    const v5Stmts = parseMigrations(SCHEMA_V5_SQL);
+    for (const stmt of v5Stmts) {
+      try {
+        await conn.execute(stmt);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '';
+        const code = (err as { code?: string }).code;
+        if (
+          code !== 'ER_DUP_FIELDNAME' &&
+          code !== 'ER_TABLE_EXISTS_ERROR' &&
+          !msg.includes('Duplicate column name')
+        )
+          throw err;
+      }
+    }
+    await conn.execute('REPLACE INTO schema_version (version) VALUES (?)', [5]);
   }
 }
 

@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_DATA_DIR } from './config.js';
+import { DEFAULT_DATA_DIR } from '../config/index.js';
 
 export interface CronResult {
   installed: boolean;
@@ -66,10 +66,17 @@ export async function cronInstall(options?: {
   const dataDir = options?.dataDir ?? DEFAULT_DATA_DIR;
   const logsDir = path.join(dataDir, 'logs');
 
+  let binaryPath = 'drift-watch';
+  try {
+    binaryPath = execFileSync('which', ['drift-watch'], { encoding: 'utf-8' }).trim();
+  } catch {
+    // Fall back to relative name if which fails
+  }
+
   const current = getCurrentCrontab();
   const lines = filterDriftWatchLines(current);
 
-  const entry = `${interval} drift-watch scan >> ${logsDir}/$(date +\\%Y-\\%m-\\%d).log 2>&1`;
+  const entry = `${interval} "${binaryPath}" scan >> "${logsDir}/$(date +\\%Y-\\%m-\\%d).log" 2>&1`;
   lines.push(entry);
 
   writeCrontab(lines.join('\n') + '\n');
@@ -92,7 +99,7 @@ export async function cronStatus(dataDir?: string): Promise<CronStatusResult> {
   const logsDir = path.join(dir, 'logs');
 
   const current = getCurrentCrontab();
-  const dwLine = current.split('\n').find((line) => line.includes('drift-watch'));
+  const dwLine = current.split('\n').find((line) => /drift-watch\s+scan\b/.test(line));
 
   let installed = false;
   let interval: string | undefined;
