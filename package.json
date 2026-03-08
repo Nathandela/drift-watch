@@ -27,6 +27,13 @@
   ],
   "author": "Nathan Delacretaz",
   "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nathandela/drift-watch.git"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "files": [
     "dist",
     "LICENSE",
@@ -34,10 +41,7 @@
   ],
   "packageManager": "pnpm@10.28.2",
   "pnpm": {
-    "onlyBuiltDependencies": [
-      "better-sqlite3",
-      "node-llama-cpp"
-    ]
+    "onlyBuiltDependencies": []
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
