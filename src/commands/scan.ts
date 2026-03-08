@@ -38,7 +38,7 @@ export async function scan(dataDir = DEFAULT_DATA_DIR): Promise<ScanResult> {
     const since = cursors?.lastScanTime ? new Date(cursors.lastScanTime) : undefined;
 
     // Discover new conversations
-    const conversations = await discoverConversations({ since });
+    const { conversations, maxMtime } = await discoverConversations({ since });
 
     if (conversations.length === 0) {
       return { sessionsScanned: 0, findingsCount: 0 };
@@ -106,11 +106,13 @@ export async function scan(dataDir = DEFAULT_DATA_DIR): Promise<ScanResult> {
       console.warn(`Warning: ${errors.length} project group(s) failed during scan`);
     }
 
-    // Update scan record with cursor based on scan start time
-    const newCursors = { lastScanTime: startedAt.toISOString() };
+    // Update scan record with cursor based on max file mtime
+    const cursorTime = maxMtime ?? startedAt;
+    const newCursors = { lastScanTime: cursorTime.toISOString() };
+    const status = errors.length > 0 ? 'partial' : 'completed';
     await repo.updateScan(scanId, {
       finished_at: new Date(),
-      status: 'completed',
+      status,
       sessions_scanned: conversations.length,
       findings_count: totalFindings,
       cursor_json: JSON.stringify(newCursors),

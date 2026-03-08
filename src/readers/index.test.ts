@@ -26,7 +26,7 @@ describe('discoverConversations', () => {
     const fixture = readFileSync(join(fixtureDir, 'claude-session.jsonl'), 'utf-8');
     writeFileSync(join(claudeDir, 'abc-123.jsonl'), fixture);
 
-    const convs = await discoverConversations({
+    const { conversations: convs } = await discoverConversations({
       claudeBase: join(tempDir, '.claude'),
       codexBase: join(tempDir, '.codex'),
       geminiBase: join(tempDir, '.gemini'),
@@ -43,7 +43,7 @@ describe('discoverConversations', () => {
     const fixture = readFileSync(join(fixtureDir, 'codex-session.jsonl'), 'utf-8');
     writeFileSync(join(codexDir, 'rollout-2026-03-01T10-00-00-abc.jsonl'), fixture);
 
-    const convs = await discoverConversations({
+    const { conversations: convs } = await discoverConversations({
       claudeBase: join(tempDir, '.claude'),
       codexBase: join(tempDir, '.codex'),
       geminiBase: join(tempDir, '.gemini'),
@@ -59,7 +59,7 @@ describe('discoverConversations', () => {
     const fixture = readFileSync(join(fixtureDir, 'gemini-session.json'), 'utf-8');
     writeFileSync(join(geminiDir, 'session-2026-03-01T10-00-abc.json'), fixture);
 
-    const convs = await discoverConversations({
+    const { conversations: convs } = await discoverConversations({
       claudeBase: join(tempDir, '.claude'),
       codexBase: join(tempDir, '.codex'),
       geminiBase: join(tempDir, '.gemini'),
@@ -94,7 +94,7 @@ describe('discoverConversations', () => {
       readFileSync(join(fixtureDir, 'gemini-session.json'), 'utf-8'),
     );
 
-    const convs = await discoverConversations({
+    const { conversations: convs } = await discoverConversations({
       claudeBase: join(tempDir, '.claude'),
       codexBase: join(tempDir, '.codex'),
       geminiBase: join(tempDir, '.gemini'),
@@ -106,7 +106,7 @@ describe('discoverConversations', () => {
   });
 
   it('handles missing source directories gracefully', async () => {
-    const convs = await discoverConversations({
+    const { conversations: convs } = await discoverConversations({
       claudeBase: join(tempDir, 'nonexistent-claude'),
       codexBase: join(tempDir, 'nonexistent-codex'),
       geminiBase: join(tempDir, 'nonexistent-gemini'),
@@ -127,7 +127,7 @@ describe('discoverConversations', () => {
     const pastDate = new Date('2020-01-01');
     utimesSync(filePath, pastDate, pastDate);
 
-    const convs = await discoverConversations({
+    const { conversations: convs } = await discoverConversations({
       claudeBase: join(tempDir, '.claude'),
       codexBase: join(tempDir, '.codex'),
       geminiBase: join(tempDir, '.gemini'),

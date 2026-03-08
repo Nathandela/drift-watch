@@ -145,11 +145,29 @@ afterAll(async () => {
   if (serverPid) {
     try {
       process.kill(serverPid, 'SIGTERM');
+      // Wait for Dolt process to exit before removing files
+      const start = Date.now();
+      while (Date.now() - start < 5000) {
+        try {
+          process.kill(serverPid, 0); // Throws if process is gone
+          await new Promise((r) => setTimeout(r, 100));
+        } catch {
+          break;
+        }
+      }
     } catch {
       // already gone
     }
   }
-  fs.rmSync(TEST_DIR, { recursive: true, force: true });
+  // Retry rmSync in case of lingering file locks
+  for (let i = 0; i < 3; i++) {
+    try {
+      fs.rmSync(TEST_DIR, { recursive: true, force: true });
+      break;
+    } catch {
+      if (i < 2) await new Promise((r) => setTimeout(r, 500));
+    }
+  }
 });
 
 describe('scan integration', () => {
@@ -204,7 +222,10 @@ describe('scan integration', () => {
 
   it('handles empty scan gracefully (no-op)', async () => {
     const readersModule = await import('../readers/index.js');
-    vi.mocked(readersModule.discoverConversations).mockResolvedValue([]);
+    vi.mocked(readersModule.discoverConversations).mockResolvedValue({
+      conversations: [],
+      maxMtime: null,
+    });
 
     const { scan } = await import('./scan.js');
     const result = await scan(TEST_DIR);

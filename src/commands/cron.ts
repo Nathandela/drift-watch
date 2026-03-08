@@ -20,6 +20,7 @@ export function parseCronArgs(args: string[]): { subcommand?: string; interval?:
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--interval') {
+      if (i + 1 >= args.length) throw new Error('--interval requires a value');
       interval = args[++i];
     } else if (!args[i].startsWith('-')) {
       subcommand = args[i];

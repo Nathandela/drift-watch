@@ -81,6 +81,13 @@ describe('readConfig', () => {
     expect(config).toEqual(custom);
   });
 
+  it('returns defaults when config.json contains malformed JSON', () => {
+    fs.writeFileSync(path.join(testDir, 'config.json'), '{invalid json!!!');
+
+    const config = readConfig(testDir);
+    expect(config).toEqual(DEFAULT_CONFIG);
+  });
+
   it('uses default data dir when no argument provided', () => {
     // Should not throw -- it reads from ~/.drift-watch/config.json
     // which may or may not exist, but should return valid config either way

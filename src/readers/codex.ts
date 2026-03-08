@@ -30,6 +30,16 @@ export function readCodexSession(content: string, filename: string): NormalizedC
 
   const lines = content.split('\n').filter((l) => l.trim());
 
+  // Detect session format: old format uses 'developer' role, new format uses standard 'user'/'assistant'
+  const hasDeveloperRole = lines.some((line) => {
+    try {
+      const rec = JSON.parse(line) as CodexRecord;
+      return rec.type === 'response_item' && rec.payload?.role === 'developer';
+    } catch {
+      return false;
+    }
+  });
+
   for (const line of lines) {
     let parsed: CodexRecord;
     try {
@@ -56,8 +66,18 @@ export function readCodexSession(content: string, filename: string): NormalizedC
           .filter(Boolean)
           .join('\n');
         if (text) {
-          // In Codex: developer = user prompt, user = model response
-          const role = payload.role === 'developer' ? 'user' : 'assistant';
+          let role: 'user' | 'assistant';
+          if (payload.role === 'developer') {
+            role = 'user';
+          } else if (payload.role === 'assistant') {
+            role = 'assistant';
+          } else if (payload.role === 'user') {
+            // In old Codex format (with developer role), 'user' = model response
+            // In new Codex format (standard roles), 'user' = human input
+            role = hasDeveloperRole ? 'assistant' : 'user';
+          } else {
+            continue;
+          }
           messages.push({ role, content: text, timestamp: parsed.timestamp });
         }
       } else if (payload.type === 'function_call' && payload.name) {

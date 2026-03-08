@@ -307,6 +307,12 @@ export class Repository {
 
   async doltCommit(message: string): Promise<void> {
     await this.conn.execute("CALL DOLT_ADD('-A')");
-    await this.conn.execute('CALL DOLT_COMMIT(?, ?)', ['-m', message]);
+    try {
+      await this.conn.execute('CALL DOLT_COMMIT(?, ?)', ['-m', message]);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      // Dolt returns this when working tree is clean
+      if (!msg.includes('nothing to commit')) throw err;
+    }
   }
 }

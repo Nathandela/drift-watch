@@ -50,7 +50,9 @@ describe('scan', () => {
     vi.clearAllMocks();
 
     const readersModule = await import('../readers/index.js');
-    discoverConversations = vi.mocked(readersModule.discoverConversations).mockResolvedValue([]);
+    discoverConversations = vi
+      .mocked(readersModule.discoverConversations)
+      .mockResolvedValue({ conversations: [], maxMtime: null });
 
     const analysisModule = await import('../analysis/index.js');
     analyze = vi.mocked(analysisModule.analyze).mockResolvedValue([]);
@@ -85,7 +87,7 @@ describe('scan', () => {
 
   it('discovers conversations and analyzes them', async () => {
     const conv = makeConversation();
-    discoverConversations.mockResolvedValue([conv]);
+    discoverConversations.mockResolvedValue({ conversations: [conv], maxMtime: new Date() });
 
     const findings = [makeFinding()];
     analyze.mockResolvedValue(findings);
@@ -102,7 +104,10 @@ describe('scan', () => {
     const conv1 = makeConversation({ project: '/project-a', sessionId: 'sess-1' });
     const conv2 = makeConversation({ project: '/project-b', sessionId: 'sess-2' });
     const conv3 = makeConversation({ project: '/project-a', sessionId: 'sess-3' });
-    discoverConversations.mockResolvedValue([conv1, conv2, conv3]);
+    discoverConversations.mockResolvedValue({
+      conversations: [conv1, conv2, conv3],
+      maxMtime: new Date(),
+    });
 
     analyze.mockResolvedValue([]);
 
@@ -113,7 +118,7 @@ describe('scan', () => {
 
   it('matches findings to patterns', async () => {
     const conv = makeConversation();
-    discoverConversations.mockResolvedValue([conv]);
+    discoverConversations.mockResolvedValue({ conversations: [conv], maxMtime: new Date() });
 
     const findings = [makeFinding(), makeFinding({ title: 'Second' })];
     analyze.mockResolvedValue(findings);
@@ -125,7 +130,7 @@ describe('scan', () => {
 
   it('calls doltCommit after successful scan', async () => {
     const conv = makeConversation();
-    discoverConversations.mockResolvedValue([conv]);
+    discoverConversations.mockResolvedValue({ conversations: [conv], maxMtime: new Date() });
     analyze.mockResolvedValue([makeFinding()]);
 
     await scan('/fake-dir');
@@ -138,7 +143,7 @@ describe('scan', () => {
 
   it('calls doltCommit even with zero findings', async () => {
     const conv = makeConversation();
-    discoverConversations.mockResolvedValue([conv]);
+    discoverConversations.mockResolvedValue({ conversations: [conv], maxMtime: new Date() });
     analyze.mockResolvedValue([]);
 
     await scan('/fake-dir');
@@ -149,7 +154,7 @@ describe('scan', () => {
 
   it('sets scan status to failed on analysis error', async () => {
     const conv = makeConversation();
-    discoverConversations.mockResolvedValue([conv]);
+    discoverConversations.mockResolvedValue({ conversations: [conv], maxMtime: new Date() });
     analyze.mockRejectedValue(new Error('LLM timeout'));
 
     await expect(scan('/fake-dir')).rejects.toThrow('LLM timeout');
@@ -164,7 +169,7 @@ describe('scan', () => {
 
   it('closes connection after error', async () => {
     const conv = makeConversation();
-    discoverConversations.mockResolvedValue([conv]);
+    discoverConversations.mockResolvedValue({ conversations: [conv], maxMtime: new Date() });
     analyze.mockRejectedValue(new Error('fail'));
 
     await expect(scan('/fake-dir')).rejects.toThrow('fail');
@@ -174,7 +179,10 @@ describe('scan', () => {
   it('continues when one project group fails but another succeeds', async () => {
     const conv1 = makeConversation({ project: '/ok-project', sessionId: 'sess-ok' });
     const conv2 = makeConversation({ project: '/bad-project', sessionId: 'sess-bad' });
-    discoverConversations.mockResolvedValue([conv1, conv2]);
+    discoverConversations.mockResolvedValue({
+      conversations: [conv1, conv2],
+      maxMtime: new Date(),
+    });
 
     analyze.mockResolvedValueOnce([makeFinding()]).mockRejectedValueOnce(new Error('LLM timeout'));
 
@@ -186,10 +194,37 @@ describe('scan', () => {
     warnSpy.mockRestore();
   });
 
+  it('uses partial status when some groups fail but others succeed', async () => {
+    const conv1 = makeConversation({ project: '/ok-project', sessionId: 'sess-ok' });
+    const conv2 = makeConversation({ project: '/bad-project', sessionId: 'sess-bad' });
+    discoverConversations.mockResolvedValue({
+      conversations: [conv1, conv2],
+      maxMtime: new Date(),
+    });
+
+    analyze.mockResolvedValueOnce([makeFinding()]).mockRejectedValueOnce(new Error('LLM timeout'));
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await scan('/fake-dir');
+
+    // Verify updateScan was called with 'partial' status
+    const updateCalls = mockConn.execute.mock.calls.filter(
+      (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('UPDATE scans SET'),
+    );
+    const statusCall = updateCalls.find((c: unknown[]) =>
+      (c[1] as unknown[])?.some((v: unknown) => v === 'partial'),
+    );
+    expect(statusCall).toBeDefined();
+    warnSpy.mockRestore();
+  });
+
   it('throws when all project groups fail', async () => {
     const conv1 = makeConversation({ project: '/bad-1', sessionId: 'sess-1' });
     const conv2 = makeConversation({ project: '/bad-2', sessionId: 'sess-2' });
-    discoverConversations.mockResolvedValue([conv1, conv2]);
+    discoverConversations.mockResolvedValue({
+      conversations: [conv1, conv2],
+      maxMtime: new Date(),
+    });
 
     analyze.mockRejectedValue(new Error('LLM timeout'));
 

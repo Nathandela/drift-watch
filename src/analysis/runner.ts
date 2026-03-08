@@ -8,6 +8,22 @@ export interface RunnerOptions {
 }
 
 export class ClaudeRunner {
+  private static activeProcesses = new Set<import('node:child_process').ChildProcess>();
+  private static signalHandlersInstalled = false;
+
+  private static installSignalHandlers(): void {
+    if (ClaudeRunner.signalHandlersInstalled) return;
+    ClaudeRunner.signalHandlersInstalled = true;
+
+    const cleanup = () => {
+      for (const proc of ClaudeRunner.activeProcesses) {
+        proc.kill();
+      }
+    };
+    process.on('SIGINT', cleanup);
+    process.on('SIGTERM', cleanup);
+  }
+
   private model: string;
   private timeoutMs: number;
 
@@ -52,6 +68,8 @@ export class ClaudeRunner {
       ];
 
       const proc = spawn('claude', args);
+      ClaudeRunner.installSignalHandlers();
+      ClaudeRunner.activeProcesses.add(proc);
 
       let stdout = '';
       let stderr = '';
@@ -60,6 +78,7 @@ export class ClaudeRunner {
       const timer = setTimeout(() => {
         if (!settled) {
           settled = true;
+          ClaudeRunner.activeProcesses.delete(proc);
           proc.kill();
           reject(new Error(`Process timeout after ${this.timeoutMs}ms`));
         }
@@ -83,6 +102,7 @@ export class ClaudeRunner {
       proc.on('error', (err: NodeJS.ErrnoException) => {
         if (settled) return;
         settled = true;
+        ClaudeRunner.activeProcesses.delete(proc);
         clearTimeout(timer);
         if (err.code === 'ENOENT') {
           reject(new Error('claude CLI not found (ENOENT). Is it installed?'));
@@ -94,6 +114,7 @@ export class ClaudeRunner {
       proc.on('close', (exitCode: number) => {
         if (settled) return;
         settled = true;
+        ClaudeRunner.activeProcesses.delete(proc);
         clearTimeout(timer);
 
         if (exitCode !== 0) {
@@ -103,7 +124,11 @@ export class ClaudeRunner {
         }
 
         try {
-          const parsed = JSON.parse(stdout);
+          let parsed = JSON.parse(stdout);
+          // Unwrap claude --output-format json envelope
+          if (parsed && typeof parsed.result === 'string' && parsed.type === 'result') {
+            parsed = JSON.parse(parsed.result);
+          }
           const validated = schema.parse(parsed);
           resolve(validated);
         } catch {

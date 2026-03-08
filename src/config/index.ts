@@ -38,7 +38,13 @@ export function readConfig(dataDir?: string): DriftWatchConfig {
     return { ...DEFAULT_CONFIG };
   }
 
-  const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  let raw: Record<string, unknown>;
+  try {
+    raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  } catch {
+    console.warn(`Warning: could not parse ${filePath}, using defaults`);
+    return { ...DEFAULT_CONFIG };
+  }
   const validKeys = new Set(Object.keys(DEFAULT_CONFIG));
   const filtered = Object.fromEntries(Object.entries(raw).filter(([k]) => validKeys.has(k)));
   return { ...DEFAULT_CONFIG, ...filtered };

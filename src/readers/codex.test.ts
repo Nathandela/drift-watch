@@ -40,6 +40,42 @@ describe('readCodexSession', () => {
     expect(conv.toolUses[0].result).toBe('export function validate() { return true; }');
   });
 
+  it('handles standard user/assistant roles without developer role', () => {
+    const content = [
+      JSON.stringify({
+        timestamp: '2026-03-01T10:00:00.000Z',
+        type: 'session_meta',
+        payload: { id: 'std-session', cwd: '/project', model_provider: 'openai' },
+      }),
+      JSON.stringify({
+        timestamp: '2026-03-01T10:00:05.000Z',
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: 'Fix the bug' }],
+        },
+      }),
+      JSON.stringify({
+        timestamp: '2026-03-01T10:00:10.000Z',
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'Fixed it' }],
+        },
+      }),
+    ].join('\n');
+
+    const conv = readCodexSession(content, 'std.jsonl');
+    const userMsgs = conv.messages.filter((m) => m.role === 'user');
+    const assistantMsgs = conv.messages.filter((m) => m.role === 'assistant');
+    expect(userMsgs).toHaveLength(1);
+    expect(userMsgs[0].content).toBe('Fix the bug');
+    expect(assistantMsgs).toHaveLength(1);
+    expect(assistantMsgs[0].content).toBe('Fixed it');
+  });
+
   it('handles empty content', () => {
     const conv = readCodexSession('', 'empty.jsonl');
 

@@ -21,9 +21,15 @@ export async function analyze(
     while (queue.length > 0) {
       const conv = queue.shift();
       if (!conv) continue;
-      const systemPrompt = buildSystemPrompt({ project: conv.project, source: conv.source });
-      const response = await runner.run(JSON.stringify(conv), systemPrompt);
-      findings.push(...response.findings);
+      try {
+        const systemPrompt = buildSystemPrompt({ project: conv.project, source: conv.source });
+        const response = await runner.run(JSON.stringify(conv), systemPrompt);
+        findings.push(...response.findings);
+      } catch (err) {
+        console.warn(
+          `Warning: analysis failed for session ${conv.sessionId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
   };
 

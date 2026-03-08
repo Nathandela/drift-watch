@@ -127,6 +127,34 @@ describe('ClaudeRunner', () => {
     }, 5000);
   });
 
+  describe('subprocess cleanup', () => {
+    it('kills child process on SIGINT', async () => {
+      const proc = createMockProcess();
+      mockSpawn.mockReturnValue(proc);
+
+      // Save original SIGINT listeners
+      const originalListeners = process.listeners('SIGINT');
+
+      const runner = new ClaudeRunner();
+      const promise = runner.run('input', 'prompt');
+
+      // Emit SIGINT
+      process.emit('SIGINT');
+
+      // Resolve the process so the promise settles
+      emitStdoutAndExit(proc, JSON.stringify(VALID_RESPONSE));
+      await promise.catch(() => {}); // swallow any error
+
+      expect(proc.kill).toHaveBeenCalled();
+
+      // Restore original SIGINT listeners
+      process.removeAllListeners('SIGINT');
+      for (const listener of originalListeners) {
+        process.on('SIGINT', listener as (...args: unknown[]) => void);
+      }
+    });
+  });
+
   describe('spawn arguments', () => {
     it('spawns claude with correct arguments', () => {
       const proc = createMockProcess();
@@ -196,6 +224,39 @@ describe('ClaudeRunner', () => {
       const result = await promise;
       expect(result).toEqual(EMPTY_RESPONSE);
       expect(result.findings).toHaveLength(0);
+    });
+
+    it('unwraps claude --output-format json envelope', async () => {
+      const proc = createMockProcess();
+      mockSpawn.mockReturnValue(proc);
+
+      const runner = new ClaudeRunner();
+      const promise = runner.run('input', 'prompt');
+
+      // Simulate envelope: { type: "result", result: "<json string>" }
+      const envelope = JSON.stringify({
+        type: 'result',
+        subtype: 'success',
+        result: JSON.stringify(VALID_RESPONSE),
+        session_id: 'test-session',
+        cost_usd: 0.01,
+      });
+      emitStdoutAndExit(proc, envelope);
+
+      const result = await promise;
+      expect(result).toEqual(VALID_RESPONSE);
+    });
+
+    it('handles direct JSON response without envelope', async () => {
+      const proc = createMockProcess();
+      mockSpawn.mockReturnValue(proc);
+
+      const runner = new ClaudeRunner();
+      const promise = runner.run('input', 'prompt');
+      emitStdoutAndExit(proc, JSON.stringify(VALID_RESPONSE));
+
+      const result = await promise;
+      expect(result).toEqual(VALID_RESPONSE);
     });
   });
 

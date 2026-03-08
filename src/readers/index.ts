@@ -4,11 +4,15 @@ import { join, basename } from 'node:path';
 import type { NormalizedConversation } from './types.js';
 import { readClaudeSession } from './claude.js';
 import { readCodexSession } from './codex.js';
+import { readCodexThreadMetadata } from './codex-sqlite.js';
 import { readGeminiSession } from './gemini.js';
+
+const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 
 export type { NormalizedConversation, NormalizedMessage, NormalizedToolUse } from './types.js';
 export { readClaudeSession } from './claude.js';
 export { readCodexSession } from './codex.js';
+export { readCodexThreadMetadata, type CodexThreadMeta } from './codex-sqlite.js';
 export { readGeminiSession } from './gemini.js';
 
 export interface DiscoverOptions {
@@ -27,8 +31,19 @@ async function dirExists(path: string): Promise<boolean> {
   }
 }
 
-async function findFiles(dir: string, pattern: RegExp, since?: Date): Promise<string[]> {
-  const results: string[] = [];
+export interface DiscoverResult {
+  conversations: NormalizedConversation[];
+  maxMtime: Date | null;
+}
+
+interface FileEntry {
+  path: string;
+  mtime: Date;
+  size: number;
+}
+
+async function findFiles(dir: string, pattern: RegExp, since?: Date): Promise<FileEntry[]> {
+  const results: FileEntry[] = [];
   try {
     const entries = await readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
@@ -36,11 +51,9 @@ async function findFiles(dir: string, pattern: RegExp, since?: Date): Promise<st
       if (entry.isDirectory()) {
         results.push(...(await findFiles(fullPath, pattern, since)));
       } else if (entry.isFile() && pattern.test(entry.name)) {
-        if (since) {
-          const s = await stat(fullPath);
-          if (s.mtime <= since) continue;
-        }
-        results.push(fullPath);
+        const s = await stat(fullPath);
+        if (since && s.mtime <= since) continue;
+        results.push({ path: fullPath, mtime: s.mtime, size: s.size });
       }
     }
   } catch (err) {
@@ -53,66 +66,103 @@ async function findFiles(dir: string, pattern: RegExp, since?: Date): Promise<st
   return results;
 }
 
-async function discoverClaude(base: string, since?: Date): Promise<NormalizedConversation[]> {
+async function discoverClaude(base: string, since?: Date): Promise<DiscoverResult> {
   const projectsDir = join(base, 'projects');
-  if (!(await dirExists(projectsDir))) return [];
+  if (!(await dirExists(projectsDir))) return { conversations: [], maxMtime: null };
 
-  const files = await findFiles(projectsDir, /\.jsonl$/, since);
+  const fileEntries = await findFiles(projectsDir, /\.jsonl$/, since);
   const results: NormalizedConversation[] = [];
+  let maxMtime: Date | null = null;
 
-  for (const file of files) {
-    // Skip subagent files
-    if (file.includes('/subagents/')) continue;
+  for (const entry of fileEntries) {
+    if (entry.path.includes('/subagents/')) continue;
 
-    const content = await readFile(file, 'utf-8');
-    const sessionId = basename(file, '.jsonl');
-    // Project path is encoded in the parent directory name
-    const parts = file.split('/');
-    const projectsIdx = parts.indexOf('projects');
-    const projectEncoded = projectsIdx >= 0 ? parts[projectsIdx + 1] : undefined;
-    const project = projectEncoded?.replace(/-/g, '/') ?? undefined;
+    if (entry.size > MAX_FILE_SIZE) {
+      console.warn(
+        `Warning: skipping ${entry.path} (${Math.round(entry.size / 1024 / 1024)}MB exceeds 100MB limit)`,
+      );
+      continue;
+    }
 
-    results.push(readClaudeSession(content, sessionId, project ?? ''));
+    if (!maxMtime || entry.mtime.getTime() > maxMtime.getTime()) maxMtime = entry.mtime;
+
+    const content = await readFile(entry.path, 'utf-8');
+    const sessionId = basename(entry.path, '.jsonl');
+
+    results.push(readClaudeSession(content, sessionId));
   }
 
-  return results;
+  return { conversations: results, maxMtime };
 }
 
-async function discoverCodex(base: string, since?: Date): Promise<NormalizedConversation[]> {
+async function discoverCodex(base: string, since?: Date): Promise<DiscoverResult> {
   const sessionsDir = join(base, 'sessions');
-  if (!(await dirExists(sessionsDir))) return [];
+  if (!(await dirExists(sessionsDir))) return { conversations: [], maxMtime: null };
 
-  const files = await findFiles(sessionsDir, /\.jsonl$/, since);
+  const fileEntries = await findFiles(sessionsDir, /\.jsonl$/, since);
   const results: NormalizedConversation[] = [];
+  let maxMtime: Date | null = null;
 
-  for (const file of files) {
-    const content = await readFile(file, 'utf-8');
-    results.push(readCodexSession(content, basename(file, '.jsonl')));
+  // Load SQLite metadata for enrichment
+  const threadMeta = readCodexThreadMetadata(base, since);
+  const metaByPath = new Map(threadMeta.map((t) => [t.rolloutPath, t]));
+
+  for (const entry of fileEntries) {
+    if (entry.size > MAX_FILE_SIZE) {
+      console.warn(
+        `Warning: skipping ${entry.path} (${Math.round(entry.size / 1024 / 1024)}MB exceeds 100MB limit)`,
+      );
+      continue;
+    }
+
+    if (!maxMtime || entry.mtime.getTime() > maxMtime.getTime()) maxMtime = entry.mtime;
+
+    const content = await readFile(entry.path, 'utf-8');
+    const conv = readCodexSession(content, basename(entry.path, '.jsonl'));
+
+    // Enrich with SQLite metadata if available
+    const meta = metaByPath.get(entry.path);
+    if (meta) {
+      if (!conv.project) conv.project = meta.cwd;
+      if (!conv.model) conv.model = meta.modelProvider;
+    }
+
+    results.push(conv);
   }
 
-  return results;
+  return { conversations: results, maxMtime };
 }
 
-async function discoverGemini(base: string, since?: Date): Promise<NormalizedConversation[]> {
+async function discoverGemini(base: string, since?: Date): Promise<DiscoverResult> {
   const tmpDir = join(base, 'tmp');
-  if (!(await dirExists(tmpDir))) return [];
+  if (!(await dirExists(tmpDir))) return { conversations: [], maxMtime: null };
 
-  const files = await findFiles(tmpDir, /^session-.*\.json$/, since);
+  const fileEntries = await findFiles(tmpDir, /^session-.*\.json$/, since);
   const results: NormalizedConversation[] = [];
+  let maxMtime: Date | null = null;
 
-  for (const file of files) {
-    const content = await readFile(file, 'utf-8');
+  for (const entry of fileEntries) {
+    if (entry.size > MAX_FILE_SIZE) {
+      console.warn(
+        `Warning: skipping ${entry.path} (${Math.round(entry.size / 1024 / 1024)}MB exceeds 100MB limit)`,
+      );
+      continue;
+    }
+
+    if (!maxMtime || entry.mtime.getTime() > maxMtime.getTime()) maxMtime = entry.mtime;
+
+    const content = await readFile(entry.path, 'utf-8');
     results.push(readGeminiSession(content));
   }
 
-  return results;
+  return { conversations: results, maxMtime };
 }
 
 const defaultHome = process.env.HOME ?? os.homedir();
 
 export async function discoverConversations(
   options: DiscoverOptions = {},
-): Promise<NormalizedConversation[]> {
+): Promise<DiscoverResult> {
   const {
     claudeBase = join(defaultHome, '.claude'),
     codexBase = join(defaultHome, '.codex'),
@@ -126,5 +176,12 @@ export async function discoverConversations(
     discoverGemini(geminiBase, since),
   ]);
 
-  return [...claude, ...codex, ...gemini];
+  const conversations = [...claude.conversations, ...codex.conversations, ...gemini.conversations];
+
+  const mtimes = [claude.maxMtime, codex.maxMtime, gemini.maxMtime].filter(
+    (d): d is Date => d !== null,
+  );
+  const maxMtime = mtimes.length > 0 ? new Date(Math.max(...mtimes.map((d) => d.getTime()))) : null;
+
+  return { conversations, maxMtime };
 }

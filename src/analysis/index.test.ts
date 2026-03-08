@@ -118,11 +118,27 @@ describe('analyze', () => {
     expect(buildSystemPrompt).toHaveBeenCalledWith({ project: '/my/project', source: 'gemini' });
   });
 
-  it('propagates runner errors', async () => {
+  it('continues processing when one conversation fails', async () => {
+    const findings = [makeFinding({ title: 'Good finding' })];
+    mockRun.mockRejectedValueOnce(new Error('LLM timeout')).mockResolvedValueOnce({ findings });
+
+    const conv1 = makeConversation({ sessionId: 'bad-sess' });
+    const conv2 = makeConversation({ sessionId: 'good-sess' });
+
+    const result = await analyze([conv1, conv2]);
+    expect(result).toHaveLength(1);
+    expect(result[0].title).toBe('Good finding');
+  });
+
+  it('returns empty findings when all conversations fail', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     mockRun.mockRejectedValueOnce(new Error('LLM timeout'));
     const conv = makeConversation();
 
-    await expect(analyze([conv])).rejects.toThrow('LLM timeout');
+    const result = await analyze([conv]);
+    expect(result).toHaveLength(0);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('LLM timeout'));
+    warnSpy.mockRestore();
   });
 
   it('serializes conversation as JSON for runner input', async () => {

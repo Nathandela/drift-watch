@@ -79,7 +79,14 @@ ALTER TABLE findings ADD COLUMN evidence TEXT;
 ALTER TABLE findings ADD COLUMN tool_context TEXT;
 `;
 
-const CURRENT_VERSION = 5;
+export const SCHEMA_V6_SQL = `
+CREATE INDEX idx_findings_scan_id ON findings (scan_id);
+CREATE INDEX idx_findings_project ON findings (project);
+CREATE INDEX idx_patterns_category ON patterns (category);
+CREATE INDEX idx_finding_patterns_pattern_id ON finding_patterns (pattern_id);
+`;
+
+const CURRENT_VERSION = 6;
 
 export function parseMigrations(sql: string): string[] {
   return sql
@@ -181,6 +188,20 @@ export async function applyMigrations(conn: Connection): Promise<void> {
       }
     }
     await conn.execute('REPLACE INTO schema_version (version) VALUES (?)', [5]);
+  }
+
+  if (currentVersion < 6) {
+    const v6Stmts = parseMigrations(SCHEMA_V6_SQL);
+    for (const stmt of v6Stmts) {
+      try {
+        await conn.execute(stmt);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '';
+        const code = (err as { code?: string }).code;
+        if (code !== 'ER_DUP_KEYNAME' && !msg.includes('Duplicate key name')) throw err;
+      }
+    }
+    await conn.execute('REPLACE INTO schema_version (version) VALUES (?)', [6]);
   }
 }
 

@@ -39,7 +39,7 @@ function isToolResultContent(content: MessageContent): boolean {
 export function readClaudeSession(
   content: string,
   sessionId: string,
-  project: string,
+  project?: string,
 ): NormalizedConversation {
   const messages: NormalizedMessage[] = [];
   const toolUses: NormalizedToolUse[] = [];
