@@ -1,7 +1,7 @@
 ---
-version: "1.6.2"
-last-updated: "2026-03-06"
-summary: "Phase skills and agent role skills reference"
+version: '1.6.4'
+last-updated: '2026-03-07'
+summary: 'Phase skills and agent role skills reference'
 ---
 
 # Skills Reference
@@ -68,6 +68,22 @@ Skills are instructions that Claude reads before executing each phase. They live
 
 **What it does**: Analyzes beads epics for knowledge gaps, checks existing docs coverage, proposes research topics for user confirmation, spawns parallel researcher subagents, and stores output at `docs/compound/research/<topic>/<slug>.md`.
 
+### `/compound:agentic-audit`
+
+**Purpose**: Audit a codebase against the 15-principle Agentic Codebase Manifesto.
+
+**When invoked**: When evaluating a codebase's readiness for AI agent collaboration.
+
+**What it does**: Detects the project stack, scores all 15 principles (0-2) with specific evidence across 3 pillars (Codebase Memory, Implementation Feedbacks, Mapping the Context) plus cross-cutting concerns. Produces a scored report (out of 30) with prioritized actions and offers to create a beads epic for improvements.
+
+### `/compound:agentic-setup`
+
+**Purpose**: Set up a codebase for agentic AI development (runs audit first).
+
+**When invoked**: When you want to improve a codebase's agentic readiness by filling gaps.
+
+**What it does**: Runs the full audit first, then proposes concrete remediation actions for each gap found. Creates real content (AGENTS.md, docs/, ADRs, lint configs) generated from actual codebase analysis. Asks for user approval before each file creation.
+
 ---
 
 ## Skill invocation
@@ -84,7 +100,10 @@ Skills are invoked as Claude Code slash commands:
 /compound:research         # Spawn research subagent
 /compound:test-clean       # Clean test artifacts
 /compound:get-a-phd <focus>       # Deep research for agent knowledge
-/compound:learn            # Capture a lesson from context
+/compound:agentic-audit    # Audit codebase against agentic manifesto
+/compound:agentic-setup    # Audit then set up agentic infrastructure
+/compound:learn-that       # Conversation-aware lesson capture with confirmation
+/compound:check-that       # Search lessons and apply to current work
 /compound:prime            # Prime session with workflow context
 ```
 

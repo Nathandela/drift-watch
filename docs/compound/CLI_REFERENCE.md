@@ -1,7 +1,7 @@
 ---
-version: "1.6.2"
-last-updated: "2026-03-06"
-summary: "Complete CLI command reference for compound-agent"
+version: '1.6.4'
+last-updated: '2026-03-07'
+summary: 'Complete CLI command reference for compound-agent'
 ---
 
 # CLI Reference

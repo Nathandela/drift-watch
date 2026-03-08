@@ -8,6 +8,12 @@ dist/
 .dolt/
 *.db
 
+# Agent logs
+agent_logs/
+
+# Misc scripts
+infinity-loop.sh
+
 # compound-agent
 .claude/.cache/
 .claude/.ca-*.json

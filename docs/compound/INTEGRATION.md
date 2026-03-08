@@ -1,7 +1,7 @@
 ---
-version: "1.6.2"
-last-updated: "2026-03-06"
-summary: "Memory system, hooks, beads integration, and agent guidance"
+version: '1.6.4'
+last-updated: '2026-03-07'
+summary: 'Memory system, hooks, beads integration, and agent guidance'
 ---
 
 # Integration
@@ -17,7 +17,20 @@ Deep integration topics for compound-agent: memory system internals, Claude Code
 Memory items are stored as newline-delimited JSON in `.claude/lessons/index.jsonl`. Each line is a complete JSON object:
 
 ```json
-{"id":"L-abc123","type":"lesson","trigger":"Shell injection via execSync","insight":"Use execFileSync with array args","tags":["security"],"source":"manual","context":{"tool":"cli","intent":"manual learning"},"created":"2026-02-15T10:00:00Z","confirmed":true,"severity":"high","supersedes":[],"related":[]}
+{
+  "id": "L-abc123",
+  "type": "lesson",
+  "trigger": "Shell injection via execSync",
+  "insight": "Use execFileSync with array args",
+  "tags": ["security"],
+  "source": "manual",
+  "context": { "tool": "cli", "intent": "manual learning" },
+  "created": "2026-02-15T10:00:00Z",
+  "confirmed": true,
+  "severity": "high",
+  "supersedes": [],
+  "related": []
+}
 ```
 
 ### Indexing
@@ -40,13 +53,13 @@ The index is rebuilt automatically when the JSONL changes. Force rebuild with `n
 
 ### Data lifecycle
 
-| Operation | Effect |
-|-----------|--------|
-| `npx ca learn` | Appends a new item to JSONL |
-| `npx ca update` | Appends an updated version (last-write-wins) |
-| `npx ca delete` | Appends with `deleted: true` flag |
-| `npx ca wrong` | Sets `invalidatedAt` (excluded from retrieval, preserved in storage) |
-| `npx ca compact` | Removes tombstones, then rebuilds index |
+| Operation        | Effect                                                               |
+| ---------------- | -------------------------------------------------------------------- |
+| `npx ca learn`   | Appends a new item to JSONL                                          |
+| `npx ca update`  | Appends an updated version (last-write-wins)                         |
+| `npx ca delete`  | Appends with `deleted: true` flag                                    |
+| `npx ca wrong`   | Sets `invalidatedAt` (excluded from retrieval, preserved in storage) |
+| `npx ca compact` | Removes tombstones, then rebuilds index                              |
 
 ---
 
@@ -54,13 +67,13 @@ The index is rebuilt automatically when the JSONL changes. Force rebuild with `n
 
 Compound-agent installs five hooks into `.claude/settings.json`:
 
-| Hook | Trigger | Action |
-|------|---------|--------|
-| **SessionStart** | New session or resume | Runs `npx ca prime` to load workflow context and high-severity lessons |
-| **PreCompact** | Before context compaction | Runs `npx ca prime` to preserve context across compaction |
-| **UserPromptSubmit** | Every user message | Detects correction/planning language, injects memory reminders |
-| **PostToolUseFailure** | Bash/Edit/Write failures | After 2 failures on same file or 3 total, suggests `npx ca search` |
-| **PostToolUse** | After successful tool use | Resets failure tracking; tracks skill file reads for phase guard |
+| Hook                   | Trigger                   | Action                                                                 |
+| ---------------------- | ------------------------- | ---------------------------------------------------------------------- |
+| **SessionStart**       | New session or resume     | Runs `npx ca prime` to load workflow context and high-severity lessons |
+| **PreCompact**         | Before context compaction | Runs `npx ca prime` to preserve context across compaction              |
+| **UserPromptSubmit**   | Every user message        | Detects correction/planning language, injects memory reminders         |
+| **PostToolUseFailure** | Bash/Edit/Write failures  | After 2 failures on same file or 3 total, suggests `npx ca search`     |
+| **PostToolUse**        | After successful tool use | Resets failure tracking; tracks skill file reads for phase guard       |
 
 ### Memory usage during sessions
 

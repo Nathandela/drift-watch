@@ -1,7 +1,7 @@
 ---
-version: "1.6.2"
-last-updated: "2026-03-06"
-summary: "The 5-phase compound-agent workflow and cook-it orchestrator"
+version: '1.6.4'
+last-updated: '2026-03-07'
+summary: 'The 5-phase compound-agent workflow and cook-it orchestrator'
 ---
 
 # Workflow
@@ -81,12 +81,12 @@ For each phase, cook-it:
 
 ### Phase gates
 
-| Gate | When | Verification |
-|------|------|-------------|
-| Post-plan | After Plan | `bd list --status=open` shows Review + Compound tasks |
-| Gate 3 | After Work | `bd list --status=in_progress` returns empty |
-| Gate 4 | After Review | `/implementation-reviewer` returned APPROVED |
-| Final | After Compound | `npx ca verify-gates <epic-id>` passes, `pnpm test` and `pnpm lint` pass |
+| Gate      | When           | Verification                                                             |
+| --------- | -------------- | ------------------------------------------------------------------------ |
+| Post-plan | After Plan     | `bd list --status=open` shows Review + Compound tasks                    |
+| Gate 3    | After Work     | `bd list --status=in_progress` returns empty                             |
+| Gate 4    | After Review   | `/implementation-reviewer` returned APPROVED                             |
+| Final     | After Compound | `npx ca verify-gates <epic-id>` passes, `pnpm test` and `pnpm lint` pass |
 
 If any gate fails, cook-it stops. You must fix the issue before proceeding.
 

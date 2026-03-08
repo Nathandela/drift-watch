@@ -1,7 +1,7 @@
 ---
-version: "1.6.2"
-last-updated: "2026-03-06"
-summary: "Overview and getting started guide for compound-agent"
+version: '1.6.4'
+last-updated: '2026-03-07'
+summary: 'Overview and getting started guide for compound-agent'
 ---
 
 # Compound Agent
@@ -62,7 +62,7 @@ npx ca doctor
   settings.json                # Claude Code hooks
   plugin.json                  # Plugin manifest
   agents/compound/             # Subagent definitions
-  commands/compound/           # Slash commands (spec-dev, plan, work, review, compound, cook-it)
+  commands/compound/           # Slash commands (spec-dev, plan, work, review, compound, cook-it, agentic-audit, agentic-setup)
   skills/compound/             # Phase skills + agent role skills
   lessons/
     index.jsonl                # Memory items (git-tracked source of truth)
@@ -76,15 +76,15 @@ docs/compound/
 
 ## Quick reference
 
-| Task | Command |
-|------|---------|
-| Capture a lesson | `npx ca learn "insight" --trigger "what happened"` |
-| Search memory | `npx ca search "keywords"` |
-| Search docs knowledge | `npx ca knowledge "query"` |
-| Check plan against memory | `npx ca check-plan --plan "description"` |
-| View stats | `npx ca stats` |
-| Run full workflow | `/compound:cook-it <epic-id>` |
-| Health check | `npx ca doctor` |
+| Task                      | Command                                            |
+| ------------------------- | -------------------------------------------------- |
+| Capture a lesson          | `npx ca learn "insight" --trigger "what happened"` |
+| Search memory             | `npx ca search "keywords"`                         |
+| Search docs knowledge     | `npx ca knowledge "query"`                         |
+| Check plan against memory | `npx ca check-plan --plan "description"`           |
+| View stats                | `npx ca stats`                                     |
+| Run full workflow         | `/compound:cook-it <epic-id>`                      |
+| Health check              | `npx ca doctor`                                    |
 
 ---
 
