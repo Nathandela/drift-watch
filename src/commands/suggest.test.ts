@@ -37,6 +37,29 @@ describe('parseSuggestArgs', () => {
   it('throws when flag is missing required value', () => {
     expect(() => parseSuggestArgs(['--limit'])).toThrow('--limit requires a value');
     expect(() => parseSuggestArgs(['--pattern'])).toThrow('--pattern requires a value');
+    expect(() => parseSuggestArgs(['--since'])).toThrow('--since requires a value');
+  });
+
+  it('parses --refresh', () => {
+    expect(parseSuggestArgs(['--refresh']).refresh).toBe(true);
+  });
+
+  it('parses --since with relative date', () => {
+    const opts = parseSuggestArgs(['--since', '7d']);
+    expect(opts.since).toBeTruthy();
+    // Should be a parsed ISO date string
+    expect(opts.since).toMatch(/^\d{4}-\d{2}/);
+  });
+
+  it('parses --since with ISO date', () => {
+    const opts = parseSuggestArgs(['--since', '2026-01-01']);
+    expect(opts.since).toBe('2026-01-01');
+  });
+
+  it('parses --refresh with --since together', () => {
+    const opts = parseSuggestArgs(['--refresh', '--since', '7d']);
+    expect(opts.refresh).toBe(true);
+    expect(opts.since).toBeTruthy();
   });
 });
 

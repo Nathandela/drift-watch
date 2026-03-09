@@ -5,12 +5,15 @@ import { ClaudeRunner } from '../analysis/runner.js';
 import { SUGGEST_SYSTEM_PROMPT } from '../analysis/suggest-prompt.js';
 import { SuggestResponseSchema } from '../analysis/suggest-schema.js';
 import { DEFAULT_DATA_DIR, readConfig } from '../config/index.js';
+import { parseRelativeDate } from './report.js';
 import type { Pattern, Finding } from '../storage/repository.js';
 
 export interface SuggestOptions {
   dataDir?: string;
   patternId?: string;
   limit?: number;
+  refresh?: boolean;
+  since?: string;
 }
 
 export interface SuggestResultPattern {
@@ -44,14 +47,21 @@ export async function suggest(options: SuggestOptions = {}): Promise<SuggestResu
   try {
     await applyMigrations(conn);
     const repo = new Repository(conn);
-    const patterns = await getPatterns(repo, options.patternId, limit);
+    const patterns = await getPatterns(repo, options, limit);
 
     if (patterns.length === 0) {
       return { runId: null, patterns: [], suggestions: [], empty: true };
     }
 
-    const existingSuggestions = await repo.patternsWithSuggestions();
-    const patternsToProcess = patterns.filter((p) => !existingSuggestions.has(p.id));
+    let patternsToProcess: Pattern[];
+    if (options.refresh) {
+      const stale = await repo.patternsWithStaleSuggestions();
+      const existing = await repo.patternsWithSuggestions();
+      patternsToProcess = patterns.filter((p) => !existing.has(p.id) || stale.has(p.id));
+    } else {
+      const existing = await repo.patternsWithSuggestions();
+      patternsToProcess = patterns.filter((p) => !existing.has(p.id));
+    }
 
     if (patternsToProcess.length === 0) {
       return { runId: null, patterns: [], suggestions: [], empty: true };
@@ -100,12 +110,15 @@ export async function suggest(options: SuggestOptions = {}): Promise<SuggestResu
 
 async function getPatterns(
   repo: Repository,
-  patternId: string | undefined,
+  options: SuggestOptions,
   limit: number,
 ): Promise<Pattern[]> {
-  if (patternId) {
-    const pattern = await repo.getPattern(patternId);
+  if (options.patternId) {
+    const pattern = await repo.getPattern(options.patternId);
     return pattern ? [pattern] : [];
+  }
+  if (options.since) {
+    return repo.getPatternsSince(options.since, limit);
   }
   return repo.getTopPatterns(limit);
 }
@@ -209,6 +222,13 @@ export function parseSuggestArgs(args: string[]): SuggestOptions {
         options.limit = n;
         break;
       }
+      case '--refresh':
+        options.refresh = true;
+        break;
+      case '--since':
+        if (i + 1 >= args.length) throw new Error('--since requires a value');
+        options.since = parseRelativeDate(args[++i]);
+        break;
     }
   }
   return options;
