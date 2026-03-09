@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Finding } from '../analysis/schema.js';
 import type { NormalizedConversation } from '../readers/types.js';
+import type { ScanProgress } from './scan.js';
 
 vi.mock('../readers/index.js');
 vi.mock('../analysis/index.js');
@@ -95,7 +96,7 @@ describe('scan', () => {
     const result = await scan('/fake-dir');
 
     expect(discoverConversations).toHaveBeenCalled();
-    expect(analyze).toHaveBeenCalledWith([conv], { model: 'haiku' });
+    expect(analyze).toHaveBeenCalledWith([conv], expect.objectContaining({ model: 'haiku' }));
     expect(result.sessionsScanned).toBe(1);
     expect(result.findingsCount).toBe(1);
   });
@@ -186,13 +187,14 @@ describe('scan', () => {
 
     analyze.mockResolvedValueOnce([makeFinding()]).mockRejectedValueOnce(new Error('LLM timeout'));
 
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const result = await scan('/fake-dir');
+    const events: ScanProgress[] = [];
+    const result = await scan({ dataDir: '/fake-dir', onProgress: (p) => events.push(p) });
 
     expect(result.findingsCount).toBe(1);
     expect(result.sessionsScanned).toBe(1); // Only the successful group's sessions
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('1 project group(s) failed'));
-    warnSpy.mockRestore();
+    const warnings = events.filter((e) => e.phase === 'warning');
+    expect(warnings).toHaveLength(1);
+    expect((warnings[0] as { message: string }).message).toContain('1 project group(s) failed');
   });
 
   it('uses partial status when some groups fail but others succeed', async () => {
@@ -205,8 +207,7 @@ describe('scan', () => {
 
     analyze.mockResolvedValueOnce([makeFinding()]).mockRejectedValueOnce(new Error('LLM timeout'));
 
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    await scan('/fake-dir');
+    await scan({ dataDir: '/fake-dir', onProgress: () => {} });
 
     // Verify updateScan was called with 'partial' status
     const updateCalls = mockConn.execute.mock.calls.filter(
@@ -216,7 +217,6 @@ describe('scan', () => {
       (c[1] as unknown[])?.some((v: unknown) => v === 'partial'),
     );
     expect(statusCall).toBeDefined();
-    warnSpy.mockRestore();
   });
 
   it('throws when all project groups fail', async () => {
@@ -230,5 +230,133 @@ describe('scan', () => {
     analyze.mockRejectedValue(new Error('LLM timeout'));
 
     await expect(scan('/fake-dir')).rejects.toThrow('LLM timeout');
+  });
+
+  describe('onProgress callback', () => {
+    it('fires progress events in correct order for a successful scan', async () => {
+      const conv = makeConversation();
+      discoverConversations.mockResolvedValue({ conversations: [conv], maxMtime: new Date() });
+      analyze.mockResolvedValue([makeFinding()]);
+
+      const events: ScanProgress[] = [];
+      await scan({ dataDir: '/fake-dir', onProgress: (p) => events.push(p) });
+
+      const phases = events.map((e) => e.phase);
+      expect(phases).toEqual(['discovering', 'discovered', 'committing', 'done']);
+    });
+
+    it('fires discovering then done for zero conversations', async () => {
+      const events: ScanProgress[] = [];
+      await scan({ dataDir: '/fake-dir', onProgress: (p) => events.push(p) });
+
+      const phases = events.map((e) => e.phase);
+      expect(phases).toEqual(['discovering', 'done']);
+      const done = events[1] as { phase: 'done'; result: { sessionsScanned: number } };
+      expect(done.result.sessionsScanned).toBe(0);
+    });
+
+    it('includes totalSessions and projectCount in discovered event', async () => {
+      const conv1 = makeConversation({ project: '/project-a', sessionId: 'sess-1' });
+      const conv2 = makeConversation({ project: '/project-b', sessionId: 'sess-2' });
+      discoverConversations.mockResolvedValue({
+        conversations: [conv1, conv2],
+        maxMtime: new Date(),
+      });
+      analyze.mockResolvedValue([]);
+
+      const events: ScanProgress[] = [];
+      await scan({ dataDir: '/fake-dir', onProgress: (p) => events.push(p) });
+
+      const discovered = events.find((e) => e.phase === 'discovered') as {
+        totalSessions: number;
+        projectCount: number;
+      };
+      expect(discovered.totalSessions).toBe(2);
+      expect(discovered.projectCount).toBe(2);
+    });
+
+    it('works with string dataDir argument (backward compat)', async () => {
+      const result = await scan('/fake-dir');
+      expect(result).toEqual({ sessionsScanned: 0, findingsCount: 0 });
+    });
+
+    it('works with no arguments (backward compat)', async () => {
+      // Should not throw - reads from default data dir
+      // We can't fully test this without real filesystem, just verify it accepts the call
+      const result = await scan();
+      expect(result).toHaveProperty('sessionsScanned');
+    });
+
+    it('threads onSessionComplete to analyze', async () => {
+      const conv = makeConversation();
+      discoverConversations.mockResolvedValue({ conversations: [conv], maxMtime: new Date() });
+      analyze.mockResolvedValue([]);
+
+      const events: ScanProgress[] = [];
+      await scan({ dataDir: '/fake-dir', onProgress: (p) => events.push(p) });
+
+      // Verify analyze received the callback wiring
+      expect(analyze).toHaveBeenCalledWith(
+        [conv],
+        expect.objectContaining({
+          onSessionComplete: expect.any(Function),
+          indexOffset: 0,
+          globalTotal: 1,
+        }),
+      );
+    });
+
+    it('emits session error events when a group fails', async () => {
+      const conv1 = makeConversation({ project: '/ok-project', sessionId: 'sess-ok' });
+      const conv2 = makeConversation({ project: '/bad-project', sessionId: 'sess-bad' });
+      discoverConversations.mockResolvedValue({
+        conversations: [conv1, conv2],
+        maxMtime: new Date(),
+      });
+
+      analyze
+        .mockResolvedValueOnce([makeFinding()])
+        .mockRejectedValueOnce(new Error('LLM timeout'));
+
+      const events: ScanProgress[] = [];
+      await scan({ dataDir: '/fake-dir', onProgress: (p) => events.push(p) });
+
+      const sessionEvents = events.filter((e) => e.phase === 'session');
+      expect(sessionEvents).toHaveLength(1);
+      const errSession = sessionEvents[0] as { session: { status: string; error: string } };
+      expect(errSession.session.status).toBe('error');
+      expect(errSession.session.error).toBe('LLM timeout');
+    });
+
+    it('fires done event before throwing on all-groups-fail', async () => {
+      const conv = makeConversation({ project: '/bad', sessionId: 'sess-bad' });
+      discoverConversations.mockResolvedValue({
+        conversations: [conv],
+        maxMtime: new Date(),
+      });
+
+      analyze.mockRejectedValue(new Error('LLM timeout'));
+
+      const events: ScanProgress[] = [];
+      await scan({ dataDir: '/fake-dir', onProgress: (p) => events.push(p) }).catch(() => {});
+
+      const phases = events.map((e) => e.phase);
+      expect(phases).toContain('done');
+    });
+
+    it('does not crash when onProgress throws', async () => {
+      const conv = makeConversation();
+      discoverConversations.mockResolvedValue({ conversations: [conv], maxMtime: new Date() });
+      analyze.mockResolvedValue([]);
+
+      const result = await scan({
+        dataDir: '/fake-dir',
+        onProgress: () => {
+          throw new Error('callback exploded');
+        },
+      });
+
+      expect(result.sessionsScanned).toBe(1);
+    });
   });
 });

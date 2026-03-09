@@ -27,14 +27,52 @@ async function main(): Promise<void> {
       break;
     }
     case 'scan': {
-      const result = await scan();
-      if (result.findingsCount === 0 && result.sessionsScanned === 0) {
-        console.log('No new conversations to scan.');
-      } else {
-        console.log(
-          `Scanned ${result.sessionsScanned} session(s), found ${result.findingsCount} finding(s).`,
-        );
-      }
+      await scan({
+        onProgress: (p) => {
+          switch (p.phase) {
+            case 'discovering':
+              console.log('Discovering conversations...');
+              break;
+            case 'discovered':
+              console.log(
+                `Found ${p.totalSessions} session(s) across ${p.projectCount} project(s)` +
+                  (p.since ? ` (since ${p.since.toISOString().slice(0, 10)})` : ''),
+              );
+              break;
+            case 'session': {
+              const s = p.session;
+              const projectLabel = s.project
+                ? s.project.replace(/\/+$/, '').split('/').pop() || s.project
+                : 'unknown';
+              if (s.status === 'ok') {
+                console.log(
+                  `[${s.current}/${s.total}] ${s.sessionId} (${projectLabel}) → ${s.findingsCount} finding${s.findingsCount !== 1 ? 's' : ''}`,
+                );
+              } else {
+                console.log(
+                  `[${s.current}/${s.total}] ${s.sessionId} (${projectLabel}) → error: ${s.error}`,
+                );
+              }
+              break;
+            }
+            case 'warning':
+              console.warn(`Warning: ${p.message}`);
+              break;
+            case 'committing':
+              console.log('Committing results...');
+              break;
+            case 'done':
+              if (p.result.sessionsScanned === 0 && p.result.findingsCount === 0) {
+                console.log('No new conversations to scan.');
+              } else {
+                console.log(
+                  `Done: ${p.result.sessionsScanned} session(s) scanned, ${p.result.findingsCount} finding(s).`,
+                );
+              }
+              break;
+          }
+        },
+      });
       break;
     }
     case 'report': {

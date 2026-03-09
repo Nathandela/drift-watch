@@ -3,9 +3,22 @@ import type { Finding } from './schema.js';
 import { ClaudeRunner } from './runner.js';
 import { buildSystemPrompt } from './prompt.js';
 
+export interface SessionProgress {
+  current: number;
+  total: number;
+  sessionId: string;
+  project: string | undefined;
+  findingsCount: number;
+  status: 'ok' | 'error';
+  error?: string;
+}
+
 export interface AnalyzeOptions {
   model?: string;
   timeoutMs?: number;
+  onSessionComplete?: (progress: SessionProgress) => void;
+  indexOffset?: number;
+  globalTotal?: number;
 }
 
 export async function analyze(
@@ -16,20 +29,43 @@ export async function analyze(
   const concurrency = Math.min(conversations.length, 3);
   const findings: Finding[] = [];
   const queue = [...conversations];
+  const offset = options?.indexOffset ?? 0;
+  const globalTotal = options?.globalTotal ?? conversations.length;
+  let completed = 0;
 
   const worker = async () => {
     while (queue.length > 0) {
       if (ClaudeRunner.shuttingDown) break;
       const conv = queue.shift();
       if (!conv) continue;
+
+      let sessionFindings = 0;
+      let status: 'ok' | 'error' = 'ok';
+      let errorMsg: string | undefined;
+
       try {
         const systemPrompt = buildSystemPrompt({ project: conv.project, source: conv.source });
         const response = await runner.run(JSON.stringify(conv), systemPrompt);
         findings.push(...response.findings);
+        sessionFindings = response.findings.length;
       } catch (err) {
-        console.warn(
-          `Warning: analysis failed for session ${conv.sessionId}: ${err instanceof Error ? err.message : String(err)}`,
-        );
+        status = 'error';
+        errorMsg = err instanceof Error ? err.message : String(err);
+      }
+
+      completed++;
+      try {
+        options?.onSessionComplete?.({
+          current: offset + completed,
+          total: globalTotal,
+          sessionId: conv.sessionId,
+          project: conv.project,
+          findingsCount: sessionFindings,
+          status,
+          error: errorMsg,
+        });
+      } catch {
+        // Never let a callback crash the analysis pipeline
       }
     }
   };

@@ -131,14 +131,15 @@ describe('analyze', () => {
   });
 
   it('returns empty findings when all conversations fail', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     mockRun.mockRejectedValueOnce(new Error('LLM timeout'));
     const conv = makeConversation();
 
-    const result = await analyze([conv]);
+    const onSessionComplete = vi.fn();
+    const result = await analyze([conv], { onSessionComplete });
     expect(result).toHaveLength(0);
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('LLM timeout'));
-    warnSpy.mockRestore();
+    expect(onSessionComplete).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'error', error: 'LLM timeout' }),
+    );
   });
 
   it('serializes conversation as JSON for runner input', async () => {
@@ -149,5 +150,95 @@ describe('analyze', () => {
 
     const serialized = mockRun.mock.calls[0][0];
     expect(serialized).toBe(JSON.stringify(conv));
+  });
+
+  describe('onSessionComplete callback', () => {
+    it('calls onSessionComplete for each conversation', async () => {
+      mockRun
+        .mockResolvedValueOnce({ findings: [makeFinding()] })
+        .mockResolvedValueOnce({ findings: [] });
+
+      const conv1 = makeConversation({ sessionId: 'sess-1' });
+      const conv2 = makeConversation({ sessionId: 'sess-2' });
+      const onSessionComplete = vi.fn();
+
+      await analyze([conv1, conv2], { onSessionComplete });
+
+      expect(onSessionComplete).toHaveBeenCalledTimes(2);
+      expect(onSessionComplete).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 'sess-1', findingsCount: 1, status: 'ok', total: 2 }),
+      );
+      expect(onSessionComplete).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 'sess-2', findingsCount: 0, status: 'ok', total: 2 }),
+      );
+    });
+
+    it('reports error status when session analysis fails', async () => {
+      mockRun.mockRejectedValueOnce(new Error('LLM timeout'));
+      const conv = makeConversation({ sessionId: 'fail-sess' });
+      const onSessionComplete = vi.fn();
+
+      await analyze([conv], { onSessionComplete });
+
+      expect(onSessionComplete).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'fail-sess',
+          status: 'error',
+          error: 'LLM timeout',
+          findingsCount: 0,
+        }),
+      );
+    });
+
+    it('respects indexOffset and globalTotal', async () => {
+      mockRun.mockResolvedValueOnce({ findings: [] });
+      const conv = makeConversation({ sessionId: 'sess-1' });
+      const onSessionComplete = vi.fn();
+
+      await analyze([conv], { onSessionComplete, indexOffset: 5, globalTotal: 10 });
+
+      expect(onSessionComplete).toHaveBeenCalledWith(
+        expect.objectContaining({ current: 6, total: 10 }),
+      );
+    });
+
+    it('does not error when onSessionComplete is undefined', async () => {
+      mockRun.mockResolvedValueOnce({ findings: [] });
+      const conv = makeConversation();
+
+      // Should not throw
+      const result = await analyze([conv]);
+      expect(result).toEqual([]);
+    });
+
+    it('continues processing when onSessionComplete throws', async () => {
+      mockRun
+        .mockResolvedValueOnce({ findings: [makeFinding()] })
+        .mockResolvedValueOnce({ findings: [makeFinding({ title: 'Second' })] });
+
+      const conv1 = makeConversation({ sessionId: 'sess-1' });
+      const conv2 = makeConversation({ sessionId: 'sess-2' });
+
+      const result = await analyze([conv1, conv2], {
+        onSessionComplete: () => {
+          throw new Error('callback exploded');
+        },
+      });
+
+      // Both sessions should still be analyzed despite callback failure
+      expect(result).toHaveLength(2);
+    });
+
+    it('includes project in callback payload', async () => {
+      mockRun.mockResolvedValueOnce({ findings: [] });
+      const conv = makeConversation({ project: '/my/project' });
+      const onSessionComplete = vi.fn();
+
+      await analyze([conv], { onSessionComplete });
+
+      expect(onSessionComplete).toHaveBeenCalledWith(
+        expect.objectContaining({ project: '/my/project' }),
+      );
+    });
   });
 });
