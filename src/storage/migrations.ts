@@ -100,6 +100,8 @@ CREATE TABLE IF NOT EXISTS suggest_runs (
 ALTER TABLE suggestions ADD COLUMN suggest_run_id VARCHAR(26) NULL;
 
 CREATE INDEX idx_suggestions_suggest_run_id ON suggestions (suggest_run_id);
+
+ALTER TABLE suggestions ADD CONSTRAINT fk_suggestions_suggest_run FOREIGN KEY (suggest_run_id) REFERENCES suggest_runs(id);
 `;
 
 const CURRENT_VERSION = 7;

@@ -11,6 +11,7 @@ import {
   SCHEMA_V3_SQL,
   SCHEMA_V4_SQL,
   SCHEMA_V5_SQL,
+  SCHEMA_V6_SQL,
   SCHEMA_V7_SQL,
 } from './migrations.js';
 import { Repository } from './repository.js';
@@ -74,6 +75,10 @@ beforeAll(async () => {
   }
   const v5Statements = parseMigrations(SCHEMA_V5_SQL);
   for (const stmt of v5Statements) {
+    await conn.execute(stmt);
+  }
+  const v6Statements = parseMigrations(SCHEMA_V6_SQL);
+  for (const stmt of v6Statements) {
     await conn.execute(stmt);
   }
   const v7Statements = parseMigrations(SCHEMA_V7_SQL);

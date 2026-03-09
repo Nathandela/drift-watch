@@ -80,19 +80,27 @@ export async function suggest(options: SuggestOptions = {}): Promise<SuggestResu
     const config = readConfig(dataDir);
     const runner = new ClaudeRunner({ model: config.suggest_model });
 
-    for (const pattern of patternsToProcess) {
-      const items = await generateForPattern(runner, repo, pattern);
-      allSuggestions.push(...items);
+    try {
+      for (const pattern of patternsToProcess) {
+        const items = await generateForPattern(runner, repo, pattern);
+        allSuggestions.push(...items);
+      }
+
+      await storeSuggestions(repo, allSuggestions, runId);
+
+      await repo.updateSuggestRun(runId, {
+        finished_at: new Date(),
+        status: 'completed',
+        patterns_processed: patternsToProcess.length,
+        suggestions_count: allSuggestions.length,
+      });
+    } catch (err) {
+      await repo.updateSuggestRun(runId, {
+        finished_at: new Date(),
+        status: 'failed',
+      });
+      throw err;
     }
-
-    await storeSuggestions(repo, allSuggestions, runId);
-
-    await repo.updateSuggestRun(runId, {
-      finished_at: new Date(),
-      status: 'completed',
-      patterns_processed: patternsToProcess.length,
-      suggestions_count: allSuggestions.length,
-    });
 
     await repo.doltCommit(
       `suggest: ${allSuggestions.length} suggestion(s) for ${patternsToProcess.length} pattern(s)`,

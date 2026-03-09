@@ -322,6 +322,58 @@ describe('report', () => {
     await expect(report({ dataDir: '/fake' })).rejects.toThrow('db error');
     expect(mockConn.end).toHaveBeenCalled();
   });
+
+  it('returns suggestions grouped by pattern when withSuggestions is true', async () => {
+    mockConn.execute
+      // queryPatterns (with id field)
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 'p1',
+            name: 'Over-engineering',
+            category: 'over_engineering',
+            occurrence_count: 5,
+            severity: 'high',
+            created_at: new Date('2026-01-01'),
+            last_seen: new Date('2026-03-01'),
+          },
+        ],
+        [],
+      ])
+      // querySummary: total findings
+      .mockResolvedValueOnce([[{ total: 10 }], []])
+      // querySummary: total patterns
+      .mockResolvedValueOnce([[{ total: 3 }], []])
+      // querySummary: top patterns
+      .mockResolvedValueOnce([[{ name: 'Over-engineering', occurrence_count: 5 }], []])
+      // querySummary: top projects
+      .mockResolvedValueOnce([[{ project: '/app', count: 7 }], []])
+      // listSuggestionsByPatternIds
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 's1',
+            finding_id: null,
+            pattern_id: 'p1',
+            suggest_run_id: null,
+            title: 'Add rule',
+            description: 'Prevent drift',
+            action_type: 'claude_md_patch',
+            artifact: null,
+            created_at: new Date('2026-03-01'),
+          },
+        ],
+        [],
+      ]);
+
+    const result = await report({ dataDir: '/fake', withSuggestions: true });
+
+    expect(result.mode).toBe('patterns');
+    expect(result.suggestions).toBeDefined();
+    expect(result.suggestions?.size).toBe(1);
+    expect(result.suggestions?.get('p1')).toHaveLength(1);
+    expect(result.suggestions?.get('p1')?.[0].title).toBe('Add rule');
+  });
 });
 
 describe('parseReportArgs --with-suggestions', () => {
