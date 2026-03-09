@@ -323,3 +323,51 @@ describe('report', () => {
     expect(mockConn.end).toHaveBeenCalled();
   });
 });
+
+describe('parseReportArgs --with-suggestions', () => {
+  it('parses --with-suggestions flag', () => {
+    expect(parseReportArgs(['--with-suggestions']).withSuggestions).toBe(true);
+  });
+});
+
+describe('printReport with suggestions', () => {
+  it('prints pattern-grouped output with suggestions', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const suggestions = new Map<string, import('../storage/repository.js').Suggestion[]>();
+    suggestions.set('p1', [
+      {
+        id: 's1',
+        finding_id: null,
+        pattern_id: 'p1',
+        suggest_run_id: null,
+        title: 'Add CLAUDE.md rule',
+        description: 'Prevent drift',
+        action_type: 'claude_md_patch',
+        artifact: null,
+        created_at: new Date('2026-03-01'),
+      },
+    ]);
+    const result: ReportResult = {
+      mode: 'patterns',
+      rows: [
+        {
+          id: 'p1',
+          name: 'Over-engineering',
+          category: 'over_engineering',
+          occurrence_count: 5,
+          severity: '3',
+          created_at: new Date('2026-01-01'),
+          last_seen: new Date('2026-03-09'),
+        },
+      ],
+      empty: false,
+      suggestions,
+    };
+    printReport(result);
+    const output = spy.mock.calls.map((c) => c[0]).join('\n');
+    expect(output).toContain('Over-engineering');
+    expect(output).toContain('Add CLAUDE.md rule');
+    expect(output).toContain('claude_md_patch');
+    spy.mockRestore();
+  });
+});

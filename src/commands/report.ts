@@ -1,9 +1,11 @@
 import { DoltServer } from '../storage/dolt.js';
 import { applyMigrations } from '../storage/migrations.js';
+import { Repository } from '../storage/repository.js';
 import { DEFAULT_DATA_DIR } from '../config/index.js';
 import { formatTable } from '../display/table.js';
 import { formatSummary } from '../display/summary.js';
 import type { SummaryData } from '../display/summary.js';
+import type { Suggestion } from '../storage/repository.js';
 import type { Connection, RowDataPacket } from 'mysql2/promise';
 
 export interface ReportOptions {
@@ -13,6 +15,7 @@ export interface ReportOptions {
   since?: string;
   category?: string;
   limit?: number;
+  withSuggestions?: boolean;
 }
 
 export interface ReportResult {
@@ -20,6 +23,7 @@ export interface ReportResult {
   rows: Record<string, unknown>[];
   empty: boolean;
   summary?: SummaryData;
+  suggestions?: Map<string, Suggestion[]>;
 }
 
 export async function report(options: ReportOptions = {}): Promise<ReportResult> {
@@ -40,6 +44,21 @@ export async function report(options: ReportOptions = {}): Promise<ReportResult>
     const result = await queryPatterns(conn, options, limit);
     if (!result.empty) {
       result.summary = await querySummary(conn, options);
+      if (options.withSuggestions) {
+        const patternIds = result.rows.map((r) => r.id as string).filter(Boolean);
+        if (patternIds.length > 0) {
+          const repo = new Repository(conn);
+          const allSuggestions = await repo.listSuggestionsByPatternIds(patternIds);
+          const grouped = new Map<string, Suggestion[]>();
+          for (const s of allSuggestions) {
+            if (!s.pattern_id) continue;
+            const list = grouped.get(s.pattern_id) ?? [];
+            list.push(s);
+            grouped.set(s.pattern_id, list);
+          }
+          result.suggestions = grouped;
+        }
+      }
     }
     return result;
   } finally {
@@ -67,7 +86,10 @@ async function queryPatterns(
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
   params.push(limit);
 
-  const sql = `SELECT name, category, occurrence_count, severity, created_at, last_seen FROM patterns ${where} ORDER BY occurrence_count DESC LIMIT ?`;
+  const fields = options.withSuggestions
+    ? 'id, name, category, occurrence_count, severity, created_at, last_seen'
+    : 'name, category, occurrence_count, severity, created_at, last_seen';
+  const sql = `SELECT ${fields} FROM patterns ${where} ORDER BY occurrence_count DESC LIMIT ?`;
 
   const [rows] = (await conn.execute(sql, params)) as [RowDataPacket[], unknown];
 
@@ -232,16 +254,34 @@ export function printReport(result: ReportResult): void {
         console.log(formatSummary(result.summary));
         console.log('');
       }
-      const headers = ['Title', 'Category', 'Count', 'Severity', 'First seen', 'Last seen'];
-      const rows = result.rows.map((r) => [
-        String(r.name ?? ''),
-        String(r.category ?? ''),
-        String(r.occurrence_count ?? 0),
-        String(r.severity ?? ''),
-        formatDate(r.created_at),
-        formatDate(r.last_seen),
-      ]);
-      console.log(formatTable(rows, headers));
+      if (result.suggestions && result.suggestions.size > 0) {
+        for (const r of result.rows) {
+          console.log(`\n  Pattern: ${r.name} [${r.category ?? 'unknown'}]`);
+          console.log(
+            `    Occurrences: ${r.occurrence_count} | Severity: ${r.severity} | Last seen: ${formatDate(r.last_seen)}`,
+          );
+          console.log(`    ${'─'.repeat(56)}`);
+          const patternSuggestions = result.suggestions.get(r.id as string) ?? [];
+          if (patternSuggestions.length > 0) {
+            console.log('    Suggestions:');
+            for (const s of patternSuggestions) {
+              console.log(`      [${s.action_type ?? 'unknown'}] ${s.title}`);
+            }
+          }
+        }
+        console.log('');
+      } else {
+        const headers = ['Title', 'Category', 'Count', 'Severity', 'First seen', 'Last seen'];
+        const rows = result.rows.map((r) => [
+          String(r.name ?? ''),
+          String(r.category ?? ''),
+          String(r.occurrence_count ?? 0),
+          String(r.severity ?? ''),
+          formatDate(r.created_at),
+          formatDate(r.last_seen),
+        ]);
+        console.log(formatTable(rows, headers));
+      }
       break;
     }
     case 'by-model': {
@@ -291,6 +331,9 @@ export function parseReportArgs(args: string[]): ReportOptions {
         break;
       case '--by-project':
         options.byProject = true;
+        break;
+      case '--with-suggestions':
+        options.withSuggestions = true;
         break;
       case '--since':
         if (i + 1 >= args.length) throw new Error('--since requires a value');
