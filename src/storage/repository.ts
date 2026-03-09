@@ -47,10 +47,21 @@ export interface Suggestion {
   id: string;
   finding_id: string | null;
   pattern_id: string | null;
+  suggest_run_id: string | null;
   title: string;
   description: string | null;
   action_type: string | null;
   artifact: string | null;
+  created_at: Date;
+}
+
+export interface SuggestRun {
+  id: string;
+  started_at: Date;
+  finished_at: Date | null;
+  status: string;
+  patterns_processed: number;
+  suggestions_count: number;
   created_at: Date;
 }
 
@@ -192,15 +203,81 @@ export class Repository {
     return rows as FindingPattern[];
   }
 
+  // Suggest Runs
+  async insertSuggestRun(data: Omit<SuggestRun, 'id' | 'created_at'>): Promise<string> {
+    const id = ulid();
+    await this.conn.execute(
+      'INSERT INTO suggest_runs (id, started_at, finished_at, status, patterns_processed, suggestions_count) VALUES (?, ?, ?, ?, ?, ?)',
+      [
+        id,
+        data.started_at,
+        data.finished_at,
+        data.status,
+        data.patterns_processed,
+        data.suggestions_count,
+      ],
+    );
+    return id;
+  }
+
+  async getSuggestRun(id: string): Promise<SuggestRun | null> {
+    const [rows] = await this.conn.execute<RowDataPacket[]>(
+      'SELECT * FROM suggest_runs WHERE id = ?',
+      [id],
+    );
+    return (rows[0] as SuggestRun) ?? null;
+  }
+
+  private static readonly SUGGEST_RUN_UPDATE_FIELDS = new Set([
+    'finished_at',
+    'status',
+    'patterns_processed',
+    'suggestions_count',
+  ]);
+
+  async updateSuggestRun(
+    id: string,
+    data: Partial<
+      Pick<SuggestRun, 'finished_at' | 'status' | 'patterns_processed' | 'suggestions_count'>
+    >,
+  ): Promise<void> {
+    const fields: string[] = [];
+    const values: (string | number | Date | null)[] = [];
+    for (const [key, val] of Object.entries(data)) {
+      if (!Repository.SUGGEST_RUN_UPDATE_FIELDS.has(key)) continue;
+      fields.push(`${key} = ?`);
+      values.push(val as string | number | Date | null);
+    }
+    if (fields.length === 0) return;
+    values.push(id);
+    await this.conn.execute(`UPDATE suggest_runs SET ${fields.join(', ')} WHERE id = ?`, values);
+  }
+
+  async listSuggestRuns(): Promise<SuggestRun[]> {
+    const [rows] = await this.conn.execute<RowDataPacket[]>(
+      'SELECT * FROM suggest_runs ORDER BY started_at DESC',
+    );
+    return rows as SuggestRun[];
+  }
+
+  async listSuggestionsByRun(runId: string): Promise<Suggestion[]> {
+    const [rows] = await this.conn.execute<RowDataPacket[]>(
+      'SELECT * FROM suggestions WHERE suggest_run_id = ?',
+      [runId],
+    );
+    return rows as Suggestion[];
+  }
+
   // Suggestions
   async insertSuggestion(data: Omit<Suggestion, 'id' | 'created_at'>): Promise<string> {
     const id = ulid();
     await this.conn.execute(
-      'INSERT INTO suggestions (id, finding_id, pattern_id, title, description, action_type, artifact) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO suggestions (id, finding_id, pattern_id, suggest_run_id, title, description, action_type, artifact) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [
         id,
         data.finding_id ?? null,
         data.pattern_id ?? null,
+        data.suggest_run_id ?? null,
         data.title,
         data.description,
         data.action_type,
@@ -241,6 +318,36 @@ export class Repository {
     return new Set((rows as Array<{ pattern_id: string }>).map((r) => r.pattern_id));
   }
 
+  async patternsWithStaleSuggestions(): Promise<Set<string>> {
+    const [rows] = await this.conn.execute<RowDataPacket[]>(
+      `SELECT p.id FROM patterns p
+       INNER JOIN suggestions s ON s.pattern_id = p.id
+       WHERE p.last_seen > (
+         SELECT MAX(s2.created_at) FROM suggestions s2 WHERE s2.pattern_id = p.id
+       )
+       GROUP BY p.id`,
+    );
+    return new Set((rows as Array<{ id: string }>).map((r) => r.id));
+  }
+
+  async getPatternsSince(since: string, limit: number): Promise<Pattern[]> {
+    const [rows] = await this.conn.execute<RowDataPacket[]>(
+      'SELECT * FROM patterns WHERE last_seen >= ? ORDER BY occurrence_count DESC, severity ASC LIMIT ?',
+      [since, limit],
+    );
+    return rows as Pattern[];
+  }
+
+  async listSuggestionsByPatternIds(patternIds: string[]): Promise<Suggestion[]> {
+    if (patternIds.length === 0) return [];
+    const placeholders = patternIds.map(() => '?').join(', ');
+    const [rows] = await this.conn.execute<RowDataPacket[]>(
+      `SELECT * FROM suggestions WHERE pattern_id IN (${placeholders}) ORDER BY created_at DESC`,
+      patternIds,
+    );
+    return rows as Suggestion[];
+  }
+
   async getTopPatterns(limit: number): Promise<Pattern[]> {
     const [rows] = await this.conn.execute<RowDataPacket[]>(
       'SELECT * FROM patterns ORDER BY occurrence_count DESC, severity ASC LIMIT ?',
@@ -259,7 +366,14 @@ export class Repository {
 
   // Stats
   async getTableCounts(): Promise<Record<string, number>> {
-    const tables = ['scans', 'findings', 'patterns', 'finding_patterns', 'suggestions'];
+    const tables = [
+      'scans',
+      'findings',
+      'patterns',
+      'finding_patterns',
+      'suggestions',
+      'suggest_runs',
+    ];
     const counts: Record<string, number> = {};
     for (const table of tables) {
       const [rows] = await this.conn.execute<RowDataPacket[]>(

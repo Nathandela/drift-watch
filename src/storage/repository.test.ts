@@ -11,6 +11,7 @@ import {
   SCHEMA_V3_SQL,
   SCHEMA_V4_SQL,
   SCHEMA_V5_SQL,
+  SCHEMA_V7_SQL,
 } from './migrations.js';
 import { Repository } from './repository.js';
 import { derivePort } from './dolt.js';
@@ -73,6 +74,10 @@ beforeAll(async () => {
   }
   const v5Statements = parseMigrations(SCHEMA_V5_SQL);
   for (const stmt of v5Statements) {
+    await conn.execute(stmt);
+  }
+  const v7Statements = parseMigrations(SCHEMA_V7_SQL);
+  for (const stmt of v7Statements) {
     await conn.execute(stmt);
   }
 
@@ -201,6 +206,7 @@ describe('Repository CRUD', () => {
       suggestionId = await repo.insertSuggestion({
         finding_id: findingId,
         pattern_id: null,
+        suggest_run_id: null,
         title: 'Add error boundary',
         description: 'Wrap the failing block in try/catch',
         action_type: 'code_change',
@@ -216,6 +222,7 @@ describe('Repository CRUD', () => {
       const id = await repo.insertSuggestion({
         finding_id: null,
         pattern_id: patternId,
+        suggest_run_id: null,
         title: 'Add CLAUDE.md rule',
         description: 'Prevent repeated errors',
         action_type: 'claude_md_patch',
@@ -236,6 +243,63 @@ describe('Repository CRUD', () => {
       const suggestions = await repo.listSuggestionsByPattern(patternId);
       expect(suggestions.length).toBeGreaterThanOrEqual(1);
       expect(suggestions[0].pattern_id).toBe(patternId);
+    });
+  });
+
+  describe('suggest_runs', () => {
+    let suggestRunId: string;
+
+    it('inserts and retrieves a suggest run', async () => {
+      suggestRunId = await repo.insertSuggestRun({
+        started_at: new Date('2026-03-01T00:00:00Z'),
+        finished_at: null,
+        status: 'running',
+        patterns_processed: 0,
+        suggestions_count: 0,
+      });
+      expect(suggestRunId).toBeTruthy();
+
+      const run = await repo.getSuggestRun(suggestRunId);
+      expect(run).toBeDefined();
+      expect(run?.status).toBe('running');
+    });
+
+    it('updates a suggest run', async () => {
+      await repo.updateSuggestRun(suggestRunId, {
+        status: 'completed',
+        finished_at: new Date('2026-03-01T00:05:00Z'),
+        patterns_processed: 3,
+        suggestions_count: 7,
+      });
+      const run = await repo.getSuggestRun(suggestRunId);
+      expect(run?.status).toBe('completed');
+      expect(run?.patterns_processed).toBe(3);
+      expect(run?.suggestions_count).toBe(7);
+    });
+
+    it('lists suggest runs', async () => {
+      const runs = await repo.listSuggestRuns();
+      expect(runs.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('inserts suggestion linked to a run', async () => {
+      const id = await repo.insertSuggestion({
+        finding_id: null,
+        pattern_id: patternId,
+        suggest_run_id: suggestRunId,
+        title: 'Run-linked suggestion',
+        description: 'Linked to a suggest run',
+        action_type: 'claude_md_patch',
+        artifact: null,
+      });
+      const suggestion = await repo.getSuggestion(id);
+      expect(suggestion?.suggest_run_id).toBe(suggestRunId);
+    });
+
+    it('lists suggestions by run', async () => {
+      const suggestions = await repo.listSuggestionsByRun(suggestRunId);
+      expect(suggestions.length).toBeGreaterThanOrEqual(1);
+      expect(suggestions[0].suggest_run_id).toBe(suggestRunId);
     });
   });
 
@@ -260,6 +324,7 @@ describe('Repository CRUD', () => {
       expect(counts.patterns).toBeGreaterThanOrEqual(1);
       expect(counts.finding_patterns).toBeGreaterThanOrEqual(1);
       expect(counts.suggestions).toBeGreaterThanOrEqual(1);
+      expect(counts.suggest_runs).toBeGreaterThanOrEqual(1);
     });
 
     it('returns last scan', async () => {

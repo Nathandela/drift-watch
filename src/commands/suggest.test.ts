@@ -43,7 +43,7 @@ describe('parseSuggestArgs', () => {
 describe('printSuggestions', () => {
   it('prints empty message when no patterns', () => {
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const result: SuggestResult = { patterns: [], suggestions: [], empty: true };
+    const result: SuggestResult = { runId: null, patterns: [], suggestions: [], empty: true };
     printSuggestions(result);
     expect(spy).toHaveBeenCalledWith(expect.stringContaining('No patterns'));
     spy.mockRestore();
@@ -52,6 +52,7 @@ describe('printSuggestions', () => {
   it('prints suggestions grouped by pattern', () => {
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const result: SuggestResult = {
+      runId: 'run1',
       patterns: [{ id: 'p1', name: 'Over-engineering', category: 'over_engineering' }],
       suggestions: [
         {
@@ -76,6 +77,7 @@ describe('printSuggestions', () => {
   it('prints multiple suggestions', () => {
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const result: SuggestResult = {
+      runId: 'run2',
       patterns: [{ id: 'p1', name: 'Repeated mistake', category: 'repeated_mistake' }],
       suggestions: [
         {
@@ -149,11 +151,12 @@ describe('suggest', () => {
     const result = await suggest({ dataDir: '/fake', limit: 5 });
     expect(result.empty).toBe(true);
     expect(result.suggestions).toHaveLength(0);
+    expect(result.runId).toBeNull();
   });
 
   it('generates suggestions for top patterns', async () => {
-    // getTopPatterns returns patterns
     mockConn.execute
+      // getTopPatterns
       .mockResolvedValueOnce([
         [
           {
@@ -167,7 +170,11 @@ describe('suggest', () => {
         ],
         [],
       ])
-      // getExampleFindings for pattern p1
+      // patternsWithSuggestions
+      .mockResolvedValueOnce([[], []])
+      // insertSuggestRun
+      .mockResolvedValueOnce([{ insertId: 0 }, []])
+      // getExampleFindings
       .mockResolvedValueOnce([
         [
           {
@@ -180,6 +187,8 @@ describe('suggest', () => {
       ])
       // insertSuggestion
       .mockResolvedValueOnce([{ insertId: 0 }, []])
+      // updateSuggestRun
+      .mockResolvedValueOnce([{ affectedRows: 1 }, []])
       // DOLT_ADD
       .mockResolvedValueOnce([[], []])
       // DOLT_COMMIT
@@ -190,11 +199,12 @@ describe('suggest', () => {
     expect(result.suggestions).toHaveLength(1);
     expect(result.suggestions[0].title).toBe('Add rule');
     expect(result.patterns[0].name).toBe('Over-engineering');
+    expect(result.runId).toBeTruthy();
   });
 
   it('handles --pattern flag to filter specific pattern', async () => {
-    // getPattern by id
     mockConn.execute
+      // getPattern by id
       .mockResolvedValueOnce([
         [
           {
@@ -208,12 +218,22 @@ describe('suggest', () => {
         ],
         [],
       ])
+      // patternsWithSuggestions
+      .mockResolvedValueOnce([[], []])
+      // insertSuggestRun
+      .mockResolvedValueOnce([{ insertId: 0 }, []])
+      // getExampleFindings
       .mockResolvedValueOnce([
         [{ id: 'f1', title: 'XSS in output', description: 'Unescaped user input' }],
         [],
       ])
+      // insertSuggestion
       .mockResolvedValueOnce([{ insertId: 0 }, []])
+      // updateSuggestRun
+      .mockResolvedValueOnce([{ affectedRows: 1 }, []])
+      // DOLT_ADD
       .mockResolvedValueOnce([[], []])
+      // DOLT_COMMIT
       .mockResolvedValueOnce([[], []]);
 
     const result = await suggest({ dataDir: '/fake', patternId: 'p1', limit: 5 });

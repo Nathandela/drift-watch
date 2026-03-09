@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMigrations, SCHEMA_SQL, SCHEMA_V4_SQL } from './migrations.js';
+import { parseMigrations, SCHEMA_SQL, SCHEMA_V4_SQL, SCHEMA_V7_SQL } from './migrations.js';
 
 describe('SCHEMA_SQL', () => {
   it('contains schema SQL content', () => {
@@ -32,5 +32,22 @@ describe('SCHEMA_V4_SQL', () => {
   it('adds pattern_id and artifact columns to suggestions', () => {
     expect(SCHEMA_V4_SQL).toContain('pattern_id');
     expect(SCHEMA_V4_SQL).toContain('artifact');
+  });
+});
+
+describe('SCHEMA_V7_SQL', () => {
+  it('creates suggest_runs table', () => {
+    expect(SCHEMA_V7_SQL).toContain('CREATE TABLE IF NOT EXISTS suggest_runs');
+    expect(SCHEMA_V7_SQL).toContain('started_at');
+    expect(SCHEMA_V7_SQL).toContain('patterns_processed');
+    expect(SCHEMA_V7_SQL).toContain('suggestions_count');
+  });
+
+  it('adds suggest_run_id column to suggestions', () => {
+    expect(SCHEMA_V7_SQL).toContain('suggest_run_id');
+  });
+
+  it('adds index on suggest_run_id', () => {
+    expect(SCHEMA_V7_SQL).toContain('idx_suggestions_suggest_run_id');
   });
 });

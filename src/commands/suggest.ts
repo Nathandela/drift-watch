@@ -28,6 +28,7 @@ export interface SuggestResultItem {
 }
 
 export interface SuggestResult {
+  runId: string | null;
   patterns: SuggestResultPattern[];
   suggestions: SuggestResultItem[];
   empty: boolean;
@@ -46,15 +47,23 @@ export async function suggest(options: SuggestOptions = {}): Promise<SuggestResu
     const patterns = await getPatterns(repo, options.patternId, limit);
 
     if (patterns.length === 0) {
-      return { patterns: [], suggestions: [], empty: true };
+      return { runId: null, patterns: [], suggestions: [], empty: true };
     }
 
     const existingSuggestions = await repo.patternsWithSuggestions();
     const patternsToProcess = patterns.filter((p) => !existingSuggestions.has(p.id));
 
     if (patternsToProcess.length === 0) {
-      return { patterns: [], suggestions: [], empty: true };
+      return { runId: null, patterns: [], suggestions: [], empty: true };
     }
+
+    const runId = await repo.insertSuggestRun({
+      started_at: new Date(),
+      finished_at: null,
+      status: 'running',
+      patterns_processed: 0,
+      suggestions_count: 0,
+    });
 
     const allSuggestions: SuggestResultItem[] = [];
     const config = readConfig(dataDir);
@@ -65,12 +74,21 @@ export async function suggest(options: SuggestOptions = {}): Promise<SuggestResu
       allSuggestions.push(...items);
     }
 
-    await storeSuggestions(repo, allSuggestions);
+    await storeSuggestions(repo, allSuggestions, runId);
+
+    await repo.updateSuggestRun(runId, {
+      finished_at: new Date(),
+      status: 'completed',
+      patterns_processed: patternsToProcess.length,
+      suggestions_count: allSuggestions.length,
+    });
+
     await repo.doltCommit(
       `suggest: ${allSuggestions.length} suggestion(s) for ${patternsToProcess.length} pattern(s)`,
     );
 
     return {
+      runId,
       patterns: patternsToProcess.map((p) => ({ id: p.id, name: p.name, category: p.category })),
       suggestions: allSuggestions,
       empty: false,
@@ -129,11 +147,16 @@ function buildPatternInput(pattern: Pattern, examples: Finding[]): string {
   return parts.join('\n');
 }
 
-async function storeSuggestions(repo: Repository, items: SuggestResultItem[]): Promise<void> {
+async function storeSuggestions(
+  repo: Repository,
+  items: SuggestResultItem[],
+  suggestRunId: string | null,
+): Promise<void> {
   for (const item of items) {
     await repo.insertSuggestion({
       finding_id: null,
       pattern_id: item.patternId,
+      suggest_run_id: suggestRunId,
       title: item.title,
       description: item.description,
       action_type: item.strategyType,

@@ -86,7 +86,23 @@ CREATE INDEX idx_patterns_category ON patterns (category);
 CREATE INDEX idx_finding_patterns_pattern_id ON finding_patterns (pattern_id);
 `;
 
-const CURRENT_VERSION = 6;
+export const SCHEMA_V7_SQL = `
+CREATE TABLE IF NOT EXISTS suggest_runs (
+  id VARCHAR(26) NOT NULL PRIMARY KEY,
+  started_at TIMESTAMP NOT NULL,
+  finished_at TIMESTAMP NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'running',
+  patterns_processed INT NOT NULL DEFAULT 0,
+  suggestions_count INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE suggestions ADD COLUMN suggest_run_id VARCHAR(26) NULL;
+
+CREATE INDEX idx_suggestions_suggest_run_id ON suggestions (suggest_run_id);
+`;
+
+const CURRENT_VERSION = 7;
 
 export function parseMigrations(sql: string): string[] {
   return sql
@@ -202,6 +218,27 @@ export async function applyMigrations(conn: Connection): Promise<void> {
       }
     }
     await conn.execute('REPLACE INTO schema_version (version) VALUES (?)', [6]);
+  }
+
+  if (currentVersion < 7) {
+    const v7Stmts = parseMigrations(SCHEMA_V7_SQL);
+    for (const stmt of v7Stmts) {
+      try {
+        await conn.execute(stmt);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '';
+        const code = (err as { code?: string }).code;
+        if (
+          code !== 'ER_DUP_FIELDNAME' &&
+          code !== 'ER_TABLE_EXISTS_ERROR' &&
+          code !== 'ER_DUP_KEYNAME' &&
+          !msg.includes('Duplicate column name') &&
+          !msg.includes('Duplicate key name')
+        )
+          throw err;
+      }
+    }
+    await conn.execute('REPLACE INTO schema_version (version) VALUES (?)', [7]);
   }
 }
 
