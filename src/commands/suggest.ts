@@ -6,7 +6,8 @@ import { SUGGEST_SYSTEM_PROMPT } from '../analysis/suggest-prompt.js';
 import { SuggestResponseSchema } from '../analysis/suggest-schema.js';
 import { DEFAULT_DATA_DIR, readConfig } from '../config/index.js';
 import { parseRelativeDate } from './report.js';
-import type { Pattern, Finding } from '../storage/repository.js';
+import { formatTable } from '../display/table.js';
+import type { Pattern, Finding, SuggestRun, Suggestion } from '../storage/repository.js';
 
 export interface SuggestOptions {
   dataDir?: string;
@@ -203,6 +204,99 @@ export function printSuggestions(result: SuggestResult): void {
     }
   }
   console.log('');
+}
+
+export interface HistoryOptions {
+  dataDir?: string;
+  runId?: string;
+}
+
+export interface HistoryResult {
+  mode: 'list' | 'detail';
+  runs: SuggestRun[];
+  suggestions: Suggestion[];
+  empty: boolean;
+}
+
+export async function suggestHistory(options: HistoryOptions = {}): Promise<HistoryResult> {
+  const dataDir = options.dataDir ?? DEFAULT_DATA_DIR;
+  const server = new DoltServer(dataDir);
+  const conn = await server.connect();
+
+  try {
+    await applyMigrations(conn);
+    const repo = new Repository(conn);
+
+    if (options.runId) {
+      const run = await repo.getSuggestRun(options.runId);
+      if (!run) {
+        return { mode: 'detail', runs: [], suggestions: [], empty: true };
+      }
+      const suggestions = await repo.listSuggestionsByRun(options.runId);
+      return { mode: 'detail', runs: [run], suggestions, empty: false };
+    }
+
+    const runs = await repo.listSuggestRuns();
+    return { mode: 'list', runs, suggestions: [], empty: runs.length === 0 };
+  } finally {
+    await conn.end();
+  }
+}
+
+function formatDate(val: unknown): string {
+  if (val instanceof Date) return val.toISOString().slice(0, 19).replace('T', ' ');
+  if (typeof val === 'string') return val.slice(0, 19);
+  return '-';
+}
+
+export function printHistory(result: HistoryResult): void {
+  if (result.empty) {
+    if (result.mode === 'detail') {
+      console.log('Suggest run not found.');
+    } else {
+      console.log('No suggest runs yet. Run "drift-watch suggest" first.');
+    }
+    return;
+  }
+
+  if (result.mode === 'list') {
+    const headers = ['ID', 'Started', 'Status', 'Patterns', 'Suggestions'];
+    const rows = result.runs.map((r) => [
+      r.id,
+      formatDate(r.started_at),
+      r.status,
+      String(r.patterns_processed),
+      String(r.suggestions_count),
+    ]);
+    console.log(formatTable(rows, headers));
+  } else {
+    const run = result.runs[0];
+    console.log(`\n  Run: ${run.id}`);
+    console.log(`  Started: ${formatDate(run.started_at)}`);
+    console.log(`  Status: ${run.status}`);
+    console.log(`  Patterns processed: ${run.patterns_processed}`);
+    console.log(`  Suggestions: ${run.suggestions_count}`);
+
+    if (result.suggestions.length > 0) {
+      console.log(`\n  ${'─'.repeat(60)}`);
+      for (const s of result.suggestions) {
+        console.log(`\n  [${s.action_type ?? 'unknown'}] ${s.title}`);
+        if (s.description) console.log(`  ${s.description}`);
+      }
+    }
+    console.log('');
+  }
+}
+
+export function parseHistoryArgs(args: string[]): HistoryOptions {
+  const options: HistoryOptions = {};
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--run') {
+      if (i + 1 >= args.length) throw new Error('--run requires a value');
+      options.runId = args[++i];
+    }
+  }
+  return options;
 }
 
 export function parseSuggestArgs(args: string[]): SuggestOptions {

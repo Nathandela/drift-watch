@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { parseSuggestArgs, printSuggestions } from './suggest.js';
-import type { SuggestResult } from './suggest.js';
+import { parseSuggestArgs, printSuggestions, parseHistoryArgs, printHistory } from './suggest.js';
+import type { SuggestResult, HistoryResult } from './suggest.js';
 
 vi.mock('../storage/dolt.js');
 vi.mock('../storage/migrations.js');
@@ -281,5 +281,101 @@ describe('suggest', () => {
     mockConn.execute.mockRejectedValueOnce(new Error('db error'));
     await expect(suggest({ dataDir: '/fake', limit: 5 })).rejects.toThrow('db error');
     expect(mockConn.end).toHaveBeenCalled();
+  });
+});
+
+describe('parseHistoryArgs', () => {
+  it('returns empty options for no args', () => {
+    const opts = parseHistoryArgs([]);
+    expect(opts.runId).toBeUndefined();
+  });
+
+  it('parses --run', () => {
+    expect(parseHistoryArgs(['--run', 'abc123']).runId).toBe('abc123');
+  });
+
+  it('throws when --run is missing value', () => {
+    expect(() => parseHistoryArgs(['--run'])).toThrow('--run requires a value');
+  });
+});
+
+describe('printHistory', () => {
+  it('prints empty message for no runs', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const result: HistoryResult = { mode: 'list', runs: [], suggestions: [], empty: true };
+    printHistory(result);
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining('No suggest runs'));
+    spy.mockRestore();
+  });
+
+  it('prints not found for missing run detail', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const result: HistoryResult = { mode: 'detail', runs: [], suggestions: [], empty: true };
+    printHistory(result);
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining('not found'));
+    spy.mockRestore();
+  });
+
+  it('prints run list in table format', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const result: HistoryResult = {
+      mode: 'list',
+      runs: [
+        {
+          id: 'run1',
+          started_at: new Date('2026-03-01T10:00:00Z'),
+          finished_at: new Date('2026-03-01T10:05:00Z'),
+          status: 'completed',
+          patterns_processed: 3,
+          suggestions_count: 7,
+          created_at: new Date('2026-03-01T10:00:00Z'),
+        },
+      ],
+      suggestions: [],
+      empty: false,
+    };
+    printHistory(result);
+    const output = spy.mock.calls.map((c) => c[0]).join('\n');
+    expect(output).toContain('run1');
+    expect(output).toContain('completed');
+    spy.mockRestore();
+  });
+
+  it('prints run detail with suggestions', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const result: HistoryResult = {
+      mode: 'detail',
+      runs: [
+        {
+          id: 'run1',
+          started_at: new Date('2026-03-01T10:00:00Z'),
+          finished_at: new Date('2026-03-01T10:05:00Z'),
+          status: 'completed',
+          patterns_processed: 1,
+          suggestions_count: 1,
+          created_at: new Date('2026-03-01T10:00:00Z'),
+        },
+      ],
+      suggestions: [
+        {
+          id: 's1',
+          finding_id: null,
+          pattern_id: 'p1',
+          suggest_run_id: 'run1',
+          title: 'Add rule',
+          description: 'Prevent drift',
+          action_type: 'claude_md_patch',
+          artifact: null,
+          created_at: new Date('2026-03-01T10:05:00Z'),
+        },
+      ],
+      empty: false,
+    };
+    printHistory(result);
+    const output = spy.mock.calls.map((c) => c[0]).join('\n');
+    expect(output).toContain('run1');
+    expect(output).toContain('Add rule');
+    expect(output).toContain('claude_md_patch');
+    spy.mockRestore();
   });
 });

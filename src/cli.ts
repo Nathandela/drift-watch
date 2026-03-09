@@ -4,7 +4,14 @@ import { init } from './commands/init.js';
 import { status, printStatus } from './commands/status.js';
 import { scan } from './commands/scan.js';
 import { report, printReport, parseReportArgs } from './commands/report.js';
-import { suggest, printSuggestions, parseSuggestArgs } from './commands/suggest.js';
+import {
+  suggest,
+  printSuggestions,
+  parseSuggestArgs,
+  suggestHistory,
+  printHistory,
+  parseHistoryArgs,
+} from './commands/suggest.js';
 import { readConfig, printConfig, setConfigValue, DEFAULT_CONFIG } from './config/index.js';
 import {
   parseCronArgs,
@@ -82,9 +89,15 @@ async function main(): Promise<void> {
       break;
     }
     case 'suggest': {
-      const suggestOpts = parseSuggestArgs(process.argv.slice(3));
-      const suggestResult = await suggest(suggestOpts);
-      printSuggestions(suggestResult);
+      if (process.argv[3] === 'history') {
+        const histOpts = parseHistoryArgs(process.argv.slice(4));
+        const histResult = await suggestHistory(histOpts);
+        printHistory(histResult);
+      } else {
+        const suggestOpts = parseSuggestArgs(process.argv.slice(3));
+        const suggestResult = await suggest(suggestOpts);
+        printSuggestions(suggestResult);
+      }
       break;
     }
     case 'config': {
