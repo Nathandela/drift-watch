@@ -3,6 +3,7 @@ import { applyMigrations } from '../storage/migrations.js';
 import { Repository } from '../storage/repository.js';
 import { discoverConversations } from '../readers/index.js';
 import { analyze } from '../analysis/index.js';
+import { ClaudeRunner } from '../analysis/runner.js';
 import { matchOrCreatePattern } from '../storage/patterns.js';
 import { DEFAULT_DATA_DIR, readConfig } from '../config/index.js';
 import type { NormalizedConversation } from '../readers/types.js';
@@ -58,11 +59,13 @@ export async function scan(dataDir = DEFAULT_DATA_DIR): Promise<ScanResult> {
     // Group by project and analyze in batches
     const groups = groupByProject(conversations);
     let totalFindings = 0;
+    let sessionsProcessed = 0;
     const errors: Array<{ project: string; error: Error }> = [];
 
     for (const [projectKey, batch] of groups) {
+      if (ClaudeRunner.shuttingDown) break;
       try {
-        const findings = await analyze(batch, { model: config.claude_model });
+        const findings = await analyze(batch, { model: config.scan_model });
 
         for (const finding of findings) {
           const findingId = await repo.insertFinding({
@@ -82,6 +85,7 @@ export async function scan(dataDir = DEFAULT_DATA_DIR): Promise<ScanResult> {
         }
 
         totalFindings += findings.length;
+        sessionsProcessed += batch.length;
       } catch (err) {
         errors.push({ project: projectKey, error: err as Error });
       }
@@ -93,7 +97,7 @@ export async function scan(dataDir = DEFAULT_DATA_DIR): Promise<ScanResult> {
         await repo.updateScan(scanId, {
           finished_at: new Date(),
           status: 'failed',
-          sessions_scanned: conversations.length,
+          sessions_scanned: sessionsProcessed,
           findings_count: totalFindings,
         });
         await repo.doltCommit(`scan: failed after ${totalFindings} finding(s)`);
@@ -105,26 +109,31 @@ export async function scan(dataDir = DEFAULT_DATA_DIR): Promise<ScanResult> {
     if (errors.length > 0) {
       console.warn(`Warning: ${errors.length} project group(s) failed during scan`);
     }
+    if (ClaudeRunner.shuttingDown) {
+      console.warn('Scan interrupted by signal.');
+    }
 
     // Update scan record with cursor based on max file mtime
     const cursorTime = maxMtime ?? startedAt;
     const newCursors = { lastScanTime: cursorTime.toISOString() };
-    const status = errors.length > 0 ? 'partial' : 'completed';
+    const status = ClaudeRunner.shuttingDown
+      ? 'interrupted'
+      : errors.length > 0
+        ? 'partial'
+        : 'completed';
     await repo.updateScan(scanId, {
       finished_at: new Date(),
       status,
-      sessions_scanned: conversations.length,
+      sessions_scanned: sessionsProcessed,
       findings_count: totalFindings,
       cursor_json: JSON.stringify(newCursors),
     });
 
     // Always commit to persist scan record and cursor
-    await repo.doltCommit(
-      `scan: ${totalFindings} finding(s) from ${conversations.length} session(s)`,
-    );
+    await repo.doltCommit(`scan: ${totalFindings} finding(s) from ${sessionsProcessed} session(s)`);
 
     return {
-      sessionsScanned: conversations.length,
+      sessionsScanned: sessionsProcessed,
       findingsCount: totalFindings,
     };
   } finally {

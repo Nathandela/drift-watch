@@ -58,7 +58,7 @@ export async function suggest(options: SuggestOptions = {}): Promise<SuggestResu
 
     const allSuggestions: SuggestResultItem[] = [];
     const config = readConfig(dataDir);
-    const runner = new ClaudeRunner({ model: config.claude_model });
+    const runner = new ClaudeRunner({ model: config.suggest_model });
 
     for (const pattern of patternsToProcess) {
       const items = await generateForPattern(runner, repo, pattern);

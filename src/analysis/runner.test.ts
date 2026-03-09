@@ -147,11 +147,55 @@ describe('ClaudeRunner', () => {
 
       expect(proc.kill).toHaveBeenCalled();
 
-      // Restore original SIGINT listeners
+      // Restore original SIGINT listeners and reset all static state
       process.removeAllListeners('SIGINT');
       for (const listener of originalListeners) {
         process.on('SIGINT', listener as (...args: unknown[]) => void);
       }
+      const runnerStatic = ClaudeRunner as unknown as Record<string, boolean>;
+      runnerStatic._shuttingDown = false;
+      runnerStatic.signalHandlersInstalled = false;
+    });
+
+    it('sets shuttingDown flag on SIGINT', async () => {
+      const proc = createMockProcess();
+      mockSpawn.mockReturnValue(proc);
+
+      const originalListeners = process.listeners('SIGINT');
+
+      const runner = new ClaudeRunner();
+      const promise = runner.run('input', 'prompt');
+
+      expect(ClaudeRunner.shuttingDown).toBe(false);
+      process.emit('SIGINT');
+      expect(ClaudeRunner.shuttingDown).toBe(true);
+
+      emitStdoutAndExit(proc, JSON.stringify(VALID_RESPONSE));
+      await promise.catch(() => {});
+
+      // Restore all static state
+      process.removeAllListeners('SIGINT');
+      for (const listener of originalListeners) {
+        process.on('SIGINT', listener as (...args: unknown[]) => void);
+      }
+      const runnerStatic = ClaudeRunner as unknown as Record<string, boolean>;
+      runnerStatic._shuttingDown = false;
+      runnerStatic.signalHandlersInstalled = false;
+    });
+
+    it('rejects new spawns when shutting down', async () => {
+      // Set the flag directly
+      (ClaudeRunner as unknown as Record<string, boolean>)._shuttingDown = true;
+
+      const runner = new ClaudeRunner();
+      await expect(runner.run('input', 'prompt')).rejects.toThrow(/shutting down/i);
+
+      expect(mockSpawn).not.toHaveBeenCalled();
+
+      // Reset all static state
+      const runnerStatic = ClaudeRunner as unknown as Record<string, boolean>;
+      runnerStatic._shuttingDown = false;
+      runnerStatic.signalHandlersInstalled = false;
     });
   });
 
@@ -254,6 +298,64 @@ describe('ClaudeRunner', () => {
       const runner = new ClaudeRunner();
       const promise = runner.run('input', 'prompt');
       emitStdoutAndExit(proc, JSON.stringify(VALID_RESPONSE));
+
+      const result = await promise;
+      expect(result).toEqual(VALID_RESPONSE);
+    });
+
+    it('strips markdown code fences from envelope result', async () => {
+      const proc = createMockProcess();
+      mockSpawn.mockReturnValue(proc);
+
+      const runner = new ClaudeRunner();
+      const promise = runner.run('input', 'prompt');
+
+      const envelope = JSON.stringify({
+        type: 'result',
+        subtype: 'success',
+        result: '```json\n' + JSON.stringify(VALID_RESPONSE) + '\n```',
+        session_id: 'test-session',
+      });
+      emitStdoutAndExit(proc, envelope);
+
+      const result = await promise;
+      expect(result).toEqual(VALID_RESPONSE);
+    });
+
+    it('strips fences with trailing commentary from envelope result', async () => {
+      const proc = createMockProcess();
+      mockSpawn.mockReturnValue(proc);
+
+      const runner = new ClaudeRunner();
+      const promise = runner.run('input', 'prompt');
+
+      const commentary = '\n\nNo drift patterns were detected in this transcript.';
+      const envelope = JSON.stringify({
+        type: 'result',
+        subtype: 'success',
+        result: '```json\n' + JSON.stringify(EMPTY_RESPONSE) + '\n```' + commentary,
+        session_id: 'test-session',
+      });
+      emitStdoutAndExit(proc, envelope);
+
+      const result = await promise;
+      expect(result).toEqual(EMPTY_RESPONSE);
+    });
+
+    it('strips fences without json language tag', async () => {
+      const proc = createMockProcess();
+      mockSpawn.mockReturnValue(proc);
+
+      const runner = new ClaudeRunner();
+      const promise = runner.run('input', 'prompt');
+
+      const envelope = JSON.stringify({
+        type: 'result',
+        subtype: 'success',
+        result: '```\n' + JSON.stringify(VALID_RESPONSE) + '\n```',
+        session_id: 'test-session',
+      });
+      emitStdoutAndExit(proc, envelope);
 
       const result = await promise;
       expect(result).toEqual(VALID_RESPONSE);

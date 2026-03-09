@@ -10,12 +10,18 @@ export interface RunnerOptions {
 export class ClaudeRunner {
   private static activeProcesses = new Set<import('node:child_process').ChildProcess>();
   private static signalHandlersInstalled = false;
+  private static _shuttingDown = false;
+
+  static get shuttingDown(): boolean {
+    return ClaudeRunner._shuttingDown;
+  }
 
   private static installSignalHandlers(): void {
     if (ClaudeRunner.signalHandlersInstalled) return;
     ClaudeRunner.signalHandlersInstalled = true;
 
     const cleanup = () => {
+      ClaudeRunner._shuttingDown = true;
       for (const proc of ClaudeRunner.activeProcesses) {
         proc.kill();
       }
@@ -48,6 +54,9 @@ export class ClaudeRunner {
     deadline?: number,
   ): Promise<T> {
     const effectiveDeadline = deadline ?? Date.now() + this.timeoutMs;
+    if (ClaudeRunner._shuttingDown) {
+      return Promise.reject(new Error('Shutting down'));
+    }
     const remaining = effectiveDeadline - Date.now();
     if (remaining <= 0) {
       return Promise.reject(new Error('Timeout budget exhausted'));
@@ -127,7 +136,13 @@ export class ClaudeRunner {
           let parsed = JSON.parse(stdout);
           // Unwrap claude --output-format json envelope
           if (parsed && typeof parsed.result === 'string' && parsed.type === 'result') {
-            parsed = JSON.parse(parsed.result);
+            let raw = parsed.result;
+            // Strip markdown code fences if present (e.g. ```json\n{...}\n```)
+            const fenceMatch = raw.match(/```(?:json|JSON)?\s*\n?([\s\S]*?)```/);
+            if (fenceMatch) {
+              raw = fenceMatch[1].trim();
+            }
+            parsed = JSON.parse(raw);
           }
           const validated = schema.parse(parsed);
           resolve(validated);

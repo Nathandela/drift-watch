@@ -5,6 +5,8 @@ import os from 'node:os';
 export interface DriftWatchConfig {
   scan_interval: string;
   claude_model: string;
+  scan_model: string;
+  suggest_model: string;
   categories: string[];
   excluded_projects: string[];
   dolt_port: number | null;
@@ -13,6 +15,8 @@ export interface DriftWatchConfig {
 export const DEFAULT_CONFIG: DriftWatchConfig = {
   scan_interval: '0 3 * * 0',
   claude_model: 'sonnet',
+  scan_model: 'haiku',
+  suggest_model: 'claude-opus-4-6',
   categories: ['all'],
   excluded_projects: [],
   dolt_port: null,
@@ -47,7 +51,18 @@ export function readConfig(dataDir?: string): DriftWatchConfig {
   }
   const validKeys = new Set(Object.keys(DEFAULT_CONFIG));
   const filtered = Object.fromEntries(Object.entries(raw).filter(([k]) => validKeys.has(k)));
-  return { ...DEFAULT_CONFIG, ...filtered };
+  const merged = { ...DEFAULT_CONFIG, ...filtered };
+
+  // Backward compat: if scan_model/suggest_model weren't explicitly set,
+  // fall back to claude_model (which the user may have configured before the split)
+  if (!('scan_model' in raw) && 'claude_model' in raw) {
+    merged.scan_model = merged.claude_model;
+  }
+  if (!('suggest_model' in raw) && 'claude_model' in raw) {
+    merged.suggest_model = merged.claude_model;
+  }
+
+  return merged;
 }
 
 export function writeConfig(config: Partial<DriftWatchConfig>, dataDir?: string): void {

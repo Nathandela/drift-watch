@@ -28,27 +28,20 @@ Category definitions:
 
 ## Output Format
 
-Respond with a JSON object containing a "findings" array. Each finding must have:
+Respond with ONLY a raw JSON object. Do NOT wrap it in markdown code fences. Do NOT include any text before or after the JSON.
 
-\`\`\`json
-{
-  "findings": [
-    {
-      "source": "claude|codex|gemini",
-      "model": "model name if known",
-      "project": "project path if known",
-      "session_id": "session identifier",
-      "session_date": "ISO date string",
-      "category": "one of the categories above",
-      "severity": 1,
-      "title": "Short descriptive title",
-      "description": "Detailed explanation of the drift pattern",
-      "evidence": "Relevant quotes or references from the conversation",
-      "tool_context": "Tools involved, if applicable"
-    }
-  ]
-}
-\`\`\`
+The JSON object must contain a "findings" array. Each finding must have these fields:
+- "source": "claude" or "codex" or "gemini"
+- "model": model name if known (optional)
+- "project": project path if known (optional)
+- "session_id": session identifier
+- "session_date": ISO date string
+- "category": one of the categories above
+- "severity": integer 1-4
+- "title": short descriptive title
+- "description": detailed explanation of the drift pattern
+- "evidence": relevant quotes or references from the conversation
+- "tool_context": tools involved, if applicable (optional)
 
 ## Analysis Guidelines
 

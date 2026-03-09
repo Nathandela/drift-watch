@@ -95,7 +95,7 @@ describe('scan', () => {
     const result = await scan('/fake-dir');
 
     expect(discoverConversations).toHaveBeenCalled();
-    expect(analyze).toHaveBeenCalledWith([conv], { model: 'sonnet' });
+    expect(analyze).toHaveBeenCalledWith([conv], { model: 'haiku' });
     expect(result.sessionsScanned).toBe(1);
     expect(result.findingsCount).toBe(1);
   });
@@ -190,6 +190,7 @@ describe('scan', () => {
     const result = await scan('/fake-dir');
 
     expect(result.findingsCount).toBe(1);
+    expect(result.sessionsScanned).toBe(1); // Only the successful group's sessions
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('1 project group(s) failed'));
     warnSpy.mockRestore();
   });

@@ -19,6 +19,7 @@ export async function analyze(
 
   const worker = async () => {
     while (queue.length > 0) {
+      if (ClaudeRunner.shuttingDown) break;
       const conv = queue.shift();
       if (!conv) continue;
       try {

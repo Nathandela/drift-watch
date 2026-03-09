@@ -28,6 +28,8 @@ describe('DEFAULT_CONFIG', () => {
     expect(DEFAULT_CONFIG).toEqual({
       scan_interval: '0 3 * * 0',
       claude_model: 'sonnet',
+      scan_model: 'haiku',
+      suggest_model: 'claude-opus-4-6',
       categories: ['all'],
       excluded_projects: [],
       dolt_port: null,
@@ -66,10 +68,40 @@ describe('readConfig', () => {
     expect(config.excluded_projects).toEqual([]);
   });
 
+  it('falls back scan_model and suggest_model to claude_model for legacy configs', () => {
+    // Legacy config: only claude_model set, no scan_model or suggest_model
+    fs.writeFileSync(path.join(testDir, 'config.json'), JSON.stringify({ claude_model: 'opus' }));
+
+    const config = readConfig(testDir);
+
+    expect(config.claude_model).toBe('opus');
+    expect(config.scan_model).toBe('opus');
+    expect(config.suggest_model).toBe('opus');
+  });
+
+  it('does not override explicit scan_model/suggest_model with claude_model', () => {
+    fs.writeFileSync(
+      path.join(testDir, 'config.json'),
+      JSON.stringify({
+        claude_model: 'opus',
+        scan_model: 'haiku',
+        suggest_model: 'claude-opus-4-6',
+      }),
+    );
+
+    const config = readConfig(testDir);
+
+    expect(config.claude_model).toBe('opus');
+    expect(config.scan_model).toBe('haiku');
+    expect(config.suggest_model).toBe('claude-opus-4-6');
+  });
+
   it('file values override all default fields', () => {
     const custom: DriftWatchConfig = {
       scan_interval: '0 0 * * *',
       claude_model: 'haiku',
+      scan_model: 'haiku',
+      suggest_model: 'claude-opus-4-6',
       categories: ['repeated_mistake', 'drift'],
       excluded_projects: ['/tmp/skip-this'],
       dolt_port: 5555,
@@ -268,7 +300,9 @@ describe('printConfig', () => {
 
     const custom: DriftWatchConfig = {
       scan_interval: '0 0 * * *',
-      claude_model: 'opus',
+      claude_model: 'haiku',
+      scan_model: 'haiku',
+      suggest_model: 'claude-opus-4-6',
       categories: ['drift', 'repeated_mistake'],
       excluded_projects: ['/tmp/skip'],
       dolt_port: 5555,
