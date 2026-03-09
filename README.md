@@ -54,22 +54,33 @@ Show the current state of the drift-watch server and database.
 
 Display detected patterns and findings.
 
-| Option             | Description                |
-| ------------------ | -------------------------- |
-| `--by-model`       | Group findings by AI model |
-| `--by-project`     | Group findings by project  |
-| `--since <date>`   | Filter findings after date |
-| `--category <cat>` | Filter by category         |
-| `--limit <n>`      | Max rows (default: 20)     |
+| Option               | Description                                                      |
+| -------------------- | ---------------------------------------------------------------- |
+| `--by-model`         | Group findings by AI model                                       |
+| `--by-project`       | Group findings by project                                        |
+| `--since <date>`     | Filter findings after date (e.g. `7d`, `2w`, `1m`, `2026-01-01`) |
+| `--category <cat>`   | Filter by category                                               |
+| `--limit <n>`        | Max rows (default: 20)                                           |
+| `--with-suggestions` | Show suggestions alongside each pattern                          |
 
 ### `drift-watch suggest [options]`
 
-Generate corrective strategies for detected patterns using Claude.
+Generate corrective strategies for detected patterns using Claude. Each run is tracked for longitudinal analysis.
 
-| Option           | Description                          |
-| ---------------- | ------------------------------------ |
-| `--pattern <id>` | Target a specific pattern            |
-| `--limit <n>`    | Max patterns to process (default: 5) |
+| Option           | Description                                        |
+| ---------------- | -------------------------------------------------- |
+| `--pattern <id>` | Target a specific pattern                          |
+| `--limit <n>`    | Max patterns to process (default: 5)               |
+| `--refresh`      | Re-generate suggestions for patterns with new data |
+| `--since <date>` | Only process patterns seen since date              |
+
+### `drift-watch suggest history [options]`
+
+View past suggest runs and their outputs.
+
+| Option       | Description                     |
+| ------------ | ------------------------------- |
+| `--run <id>` | Show details for a specific run |
 
 ### `drift-watch config show`
 
@@ -79,13 +90,15 @@ Display the current configuration.
 
 Update a configuration value. Available keys:
 
-| Key                 | Default     | Description                           |
-| ------------------- | ----------- | ------------------------------------- |
-| `scan_interval`     | `0 3 * * 0` | Cron expression for scheduled scans   |
-| `claude_model`      | `sonnet`    | Claude model for analysis             |
-| `categories`        | `all`       | Comma-separated category filter       |
-| `excluded_projects` | _(none)_    | Comma-separated project paths to skip |
-| `dolt_port`         | _(auto)_    | Override the Dolt server port         |
+| Key                 | Default           | Description                            |
+| ------------------- | ----------------- | -------------------------------------- |
+| `scan_interval`     | `0 3 * * 0`       | Cron expression for scheduled scans    |
+| `claude_model`      | `sonnet`          | Claude model fallback                  |
+| `scan_model`        | `haiku`           | Claude model for scan analysis         |
+| `suggest_model`     | `claude-opus-4-6` | Claude model for suggestion generation |
+| `categories`        | `all`             | Comma-separated category filter        |
+| `excluded_projects` | _(none)_          | Comma-separated project paths to skip  |
+| `dolt_port`         | _(auto)_          | Override the Dolt server port          |
 
 ### `drift-watch cron install [--interval <cron-expr>]`
 

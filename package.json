@@ -1,6 +1,6 @@
 {
   "name": "drift-watch",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Drift and repetitive error analyzer for AI agentic coding sessions",
   "type": "module",
   "main": "dist/index.js",
