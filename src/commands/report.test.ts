@@ -91,8 +91,9 @@ describe('parseRelativeDate', () => {
     expect(parseRelativeDate('2026-01-15')).toBe('2026-01-15');
   });
 
-  it('passes through invalid formats unchanged', () => {
-    expect(parseRelativeDate('foo')).toBe('foo');
+  it('throws on invalid date formats', () => {
+    expect(() => parseRelativeDate('foo')).toThrow('Invalid date');
+    expect(() => parseRelativeDate('not-a-date')).toThrow('Invalid date');
   });
 });
 

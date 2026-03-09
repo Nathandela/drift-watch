@@ -253,9 +253,10 @@ export class Repository {
     await this.conn.execute(`UPDATE suggest_runs SET ${fields.join(', ')} WHERE id = ?`, values);
   }
 
-  async listSuggestRuns(): Promise<SuggestRun[]> {
+  async listSuggestRuns(limit = 50): Promise<SuggestRun[]> {
     const [rows] = await this.conn.execute<RowDataPacket[]>(
-      'SELECT * FROM suggest_runs ORDER BY started_at DESC',
+      'SELECT * FROM suggest_runs ORDER BY started_at DESC LIMIT ?',
+      [limit],
     );
     return rows as SuggestRun[];
   }

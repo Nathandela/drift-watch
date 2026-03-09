@@ -36,9 +36,15 @@ export async function report(options: ReportOptions = {}): Promise<ReportResult>
   try {
     await applyMigrations(conn);
     if (options.byModel) {
+      if (options.withSuggestions) {
+        console.warn('Warning: --with-suggestions is only supported in default (patterns) mode.');
+      }
       return await queryByModel(conn, options, limit);
     }
     if (options.byProject) {
+      if (options.withSuggestions) {
+        console.warn('Warning: --with-suggestions is only supported in default (patterns) mode.');
+      }
       return await queryByProject(conn, options, limit);
     }
     const result = await queryPatterns(conn, options, limit);
@@ -309,17 +315,23 @@ export function printReport(result: ReportResult): void {
 
 export function parseRelativeDate(input: string): string {
   const match = input.match(/^(\d+)([dwm])$/);
-  if (!match) return input; // assume ISO date
-  const [, num, unit] = match;
-  const n = parseInt(num, 10);
-  const now = new Date();
-  if (unit === 'm') {
-    now.setMonth(now.getMonth() - n);
-  } else {
-    const days = unit === 'w' ? n * 7 : n;
-    now.setDate(now.getDate() - days);
+  if (match) {
+    const [, num, unit] = match;
+    const n = parseInt(num, 10);
+    const now = new Date();
+    if (unit === 'm') {
+      now.setMonth(now.getMonth() - n);
+    } else {
+      const days = unit === 'w' ? n * 7 : n;
+      now.setDate(now.getDate() - days);
+    }
+    return now.toISOString();
   }
-  return now.toISOString();
+  // Validate as ISO date (YYYY-MM-DD or full ISO string)
+  if (/^\d{4}-\d{2}-\d{2}/.test(input) && !isNaN(Date.parse(input))) {
+    return input;
+  }
+  throw new Error(`Invalid date: "${input}". Use YYYY-MM-DD or a relative period (7d, 2w, 1m).`);
 }
 
 export function parseReportArgs(args: string[]): ReportOptions {

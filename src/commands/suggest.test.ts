@@ -284,6 +284,228 @@ describe('suggest', () => {
   });
 });
 
+describe('suggestHistory', () => {
+  let suggestHistory: typeof import('./suggest.js').suggestHistory;
+
+  const mockConn = {
+    execute: vi.fn().mockResolvedValue([[], []]),
+    end: vi.fn().mockResolvedValue(undefined),
+  };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+
+    const doltModule = await import('../storage/dolt.js');
+    vi.mocked(doltModule.DoltServer).mockImplementation(
+      () =>
+        ({
+          connect: vi.fn().mockResolvedValue(mockConn),
+        }) as unknown as InstanceType<typeof doltModule.DoltServer>,
+    );
+
+    const migrationsModule = await import('../storage/migrations.js');
+    vi.mocked(migrationsModule.applyMigrations).mockResolvedValue(undefined);
+
+    const mod = await import('./suggest.js');
+    suggestHistory = mod.suggestHistory;
+  });
+
+  it('returns empty list when no runs exist', async () => {
+    mockConn.execute.mockResolvedValueOnce([[], []]);
+    const result = await suggestHistory({ dataDir: '/fake' });
+    expect(result.mode).toBe('list');
+    expect(result.empty).toBe(true);
+    expect(result.runs).toHaveLength(0);
+  });
+
+  it('returns not-found for nonexistent run ID', async () => {
+    mockConn.execute.mockResolvedValueOnce([[], []]);
+    const result = await suggestHistory({ dataDir: '/fake', runId: 'nonexistent' });
+    expect(result.mode).toBe('detail');
+    expect(result.empty).toBe(true);
+  });
+
+  it('returns run detail with suggestions for valid run ID', async () => {
+    mockConn.execute
+      // getSuggestRun
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 'run1',
+            started_at: new Date('2026-03-01'),
+            finished_at: new Date('2026-03-01'),
+            status: 'completed',
+            patterns_processed: 2,
+            suggestions_count: 3,
+            created_at: new Date('2026-03-01'),
+          },
+        ],
+        [],
+      ])
+      // listSuggestionsByRun
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 's1',
+            finding_id: null,
+            pattern_id: 'p1',
+            suggest_run_id: 'run1',
+            title: 'Add rule',
+            description: 'Prevent drift',
+            action_type: 'claude_md_patch',
+            artifact: null,
+            created_at: new Date('2026-03-01'),
+          },
+        ],
+        [],
+      ]);
+
+    const result = await suggestHistory({ dataDir: '/fake', runId: 'run1' });
+    expect(result.mode).toBe('detail');
+    expect(result.empty).toBe(false);
+    expect(result.runs).toHaveLength(1);
+    expect(result.suggestions).toHaveLength(1);
+    expect(result.suggestions[0].title).toBe('Add rule');
+  });
+
+  it('closes connection after execution', async () => {
+    mockConn.execute.mockResolvedValueOnce([[], []]);
+    await suggestHistory({ dataDir: '/fake' });
+    expect(mockConn.end).toHaveBeenCalled();
+  });
+});
+
+describe('suggest --refresh filtering', () => {
+  let suggest: typeof import('./suggest.js').suggest;
+
+  const mockConn = {
+    execute: vi.fn().mockResolvedValue([[], []]),
+    end: vi.fn().mockResolvedValue(undefined),
+  };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+
+    const doltModule = await import('../storage/dolt.js');
+    vi.mocked(doltModule.DoltServer).mockImplementation(
+      () =>
+        ({
+          connect: vi.fn().mockResolvedValue(mockConn),
+        }) as unknown as InstanceType<typeof doltModule.DoltServer>,
+    );
+
+    const migrationsModule = await import('../storage/migrations.js');
+    vi.mocked(migrationsModule.applyMigrations).mockResolvedValue(undefined);
+
+    const runnerModule = await import('../analysis/runner.js');
+    vi.mocked(runnerModule.ClaudeRunner).mockImplementation(
+      () =>
+        ({
+          runWithSchema: vi.fn().mockResolvedValue({
+            suggestions: [
+              {
+                strategy_type: 'claude_md_patch',
+                title: 'Refreshed rule',
+                description: 'Updated suggestion',
+                artifact: null,
+              },
+            ],
+          }),
+        }) as unknown as InstanceType<typeof runnerModule.ClaudeRunner>,
+    );
+
+    const mod = await import('./suggest.js');
+    suggest = mod.suggest;
+  });
+
+  it('returns empty when all patterns already have fresh suggestions', async () => {
+    mockConn.execute
+      // getTopPatterns
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 'p1',
+            name: 'Test',
+            description: null,
+            severity: 'high',
+            category: 'drift',
+            occurrence_count: 3,
+          },
+        ],
+        [],
+      ])
+      // patternsWithStaleSuggestions (none stale)
+      .mockResolvedValueOnce([[], []])
+      // patternsWithSuggestions (p1 already has suggestions)
+      .mockResolvedValueOnce([[{ pattern_id: 'p1' }], []]);
+
+    const result = await suggest({ dataDir: '/fake', refresh: true });
+    expect(result.empty).toBe(true);
+  });
+
+  it('processes stale patterns on --refresh', async () => {
+    mockConn.execute
+      // getTopPatterns
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 'p1',
+            name: 'Stale',
+            description: null,
+            severity: 'high',
+            category: 'drift',
+            occurrence_count: 5,
+          },
+        ],
+        [],
+      ])
+      // patternsWithStaleSuggestions (p1 is stale)
+      .mockResolvedValueOnce([[{ id: 'p1' }], []])
+      // patternsWithSuggestions (p1 has suggestions but they're stale)
+      .mockResolvedValueOnce([[{ pattern_id: 'p1' }], []])
+      // insertSuggestRun
+      .mockResolvedValueOnce([{ insertId: 0 }, []])
+      // getExampleFindings
+      .mockResolvedValueOnce([[{ id: 'f1', title: 'Example', description: 'desc' }], []])
+      // insertSuggestion
+      .mockResolvedValueOnce([{ insertId: 0 }, []])
+      // updateSuggestRun
+      .mockResolvedValueOnce([{ affectedRows: 1 }, []])
+      // DOLT_ADD
+      .mockResolvedValueOnce([[], []])
+      // DOLT_COMMIT
+      .mockResolvedValueOnce([[], []]);
+
+    const result = await suggest({ dataDir: '/fake', refresh: true });
+    expect(result.empty).toBe(false);
+    expect(result.patterns[0].name).toBe('Stale');
+    expect(result.suggestions[0].title).toBe('Refreshed rule');
+  });
+
+  it('without --refresh skips patterns that already have suggestions', async () => {
+    mockConn.execute
+      // getTopPatterns
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 'p1',
+            name: 'Has suggestions',
+            description: null,
+            severity: 'high',
+            category: 'drift',
+            occurrence_count: 3,
+          },
+        ],
+        [],
+      ])
+      // patternsWithSuggestions (p1 already has suggestions)
+      .mockResolvedValueOnce([[{ pattern_id: 'p1' }], []]);
+
+    const result = await suggest({ dataDir: '/fake' });
+    expect(result.empty).toBe(true);
+  });
+});
+
 describe('parseHistoryArgs', () => {
   it('returns empty options for no args', () => {
     const opts = parseHistoryArgs([]);

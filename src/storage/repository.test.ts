@@ -308,6 +308,31 @@ describe('Repository CRUD', () => {
     });
   });
 
+  describe('pattern suggestion queries', () => {
+    it('patternsWithSuggestions returns pattern IDs that have suggestions', async () => {
+      const ids = await repo.patternsWithSuggestions();
+      expect(ids.has(patternId)).toBe(true);
+    });
+
+    it('patternsWithStaleSuggestions returns patterns with newer last_seen than latest suggestion', async () => {
+      // Update the pattern's last_seen to be in the future so it becomes "stale"
+      await conn.execute('UPDATE patterns SET last_seen = ? WHERE id = ?', [
+        new Date('2037-01-01T00:00:00Z'),
+        patternId,
+      ]);
+      const stale = await repo.patternsWithStaleSuggestions();
+      expect(stale.has(patternId)).toBe(true);
+
+      // Reset it so it's no longer stale
+      await conn.execute('UPDATE patterns SET last_seen = ? WHERE id = ?', [
+        new Date('2020-01-01T00:00:00Z'),
+        patternId,
+      ]);
+      const notStale = await repo.patternsWithStaleSuggestions();
+      expect(notStale.has(patternId)).toBe(false);
+    });
+  });
+
   describe('top patterns and example findings', () => {
     it('returns top patterns ordered by occurrence', async () => {
       const patterns = await repo.getTopPatterns(5);

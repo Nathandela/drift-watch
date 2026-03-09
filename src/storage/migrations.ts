@@ -101,6 +101,8 @@ ALTER TABLE suggestions ADD COLUMN suggest_run_id VARCHAR(26) NULL;
 
 CREATE INDEX idx_suggestions_suggest_run_id ON suggestions (suggest_run_id);
 
+CREATE INDEX idx_suggestions_pattern_id ON suggestions (pattern_id);
+
 ALTER TABLE suggestions ADD CONSTRAINT fk_suggestions_suggest_run FOREIGN KEY (suggest_run_id) REFERENCES suggest_runs(id);
 `;
 
@@ -234,8 +236,10 @@ export async function applyMigrations(conn: Connection): Promise<void> {
           code !== 'ER_DUP_FIELDNAME' &&
           code !== 'ER_TABLE_EXISTS_ERROR' &&
           code !== 'ER_DUP_KEYNAME' &&
+          code !== 'ER_FK_DUP_NAME' &&
           !msg.includes('Duplicate column name') &&
-          !msg.includes('Duplicate key name')
+          !msg.includes('Duplicate key name') &&
+          !msg.includes('Duplicate foreign key')
         )
           throw err;
       }

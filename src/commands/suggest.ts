@@ -68,6 +68,9 @@ export async function suggest(options: SuggestOptions = {}): Promise<SuggestResu
       return { runId: null, patterns: [], suggestions: [], empty: true };
     }
 
+    const config = readConfig(dataDir);
+    const runner = new ClaudeRunner({ model: config.suggest_model });
+
     const runId = await repo.insertSuggestRun({
       started_at: new Date(),
       finished_at: null,
@@ -77,8 +80,6 @@ export async function suggest(options: SuggestOptions = {}): Promise<SuggestResu
     });
 
     const allSuggestions: SuggestResultItem[] = [];
-    const config = readConfig(dataDir);
-    const runner = new ClaudeRunner({ model: config.suggest_model });
 
     try {
       for (const pattern of patternsToProcess) {
@@ -94,6 +95,10 @@ export async function suggest(options: SuggestOptions = {}): Promise<SuggestResu
         patterns_processed: patternsToProcess.length,
         suggestions_count: allSuggestions.length,
       });
+
+      await repo.doltCommit(
+        `suggest: ${allSuggestions.length} suggestion(s) for ${patternsToProcess.length} pattern(s)`,
+      );
     } catch (err) {
       await repo.updateSuggestRun(runId, {
         finished_at: new Date(),
@@ -101,10 +106,6 @@ export async function suggest(options: SuggestOptions = {}): Promise<SuggestResu
       });
       throw err;
     }
-
-    await repo.doltCommit(
-      `suggest: ${allSuggestions.length} suggestion(s) for ${patternsToProcess.length} pattern(s)`,
-    );
 
     return {
       runId,
